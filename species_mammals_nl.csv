@@ -1,0 +1,26 @@
+scientific_name,nl_name,en_name,category,tier,emoji,realistic_for_field_edge,notes
+Vulpes vulpes,vos,red fox,carnivore,2,🦊,true,blaffen en janken vooral 's nachts
+Meles meles,das,European badger,carnivore,1,🦡,true,grommen en snuiven
+Capreolus capreolus,ree,roe deer,ungulate,2,🦌,true,bafgeluid bij verstoring
+Cervus elaphus,edelhert,red deer,ungulate,1,🦌,false,zeldzaam in NL; alleen Veluwe e.d.
+Lutra lutra,otter,Eurasian otter,carnivore,1,🦦,false,alleen bij water
+Mustela putorius,bunzing,European polecat,carnivore,1,🐾,true,gil- en tsjirpgeluiden
+Martes martes,boommarter,pine marten,carnivore,1,🐾,true,schreeuwen bij paarseizoen
+Martes foina,steenmarter,stone marten,carnivore,1,🐾,true,vergelijkbaar met boommarter
+Neovison vison,nerts,American mink,carnivore,1,🐾,true,exoot; hoge piep- en sissgeluiden
+Mustela nivalis,wezel,least weasel,carnivore,3,🐾,true,hoge piepjes en sisgeluiden
+Sciurus vulgaris,rode eekhoorn,red squirrel,rodent,2,🐿️,true,kekkeren
+Lepus europaeus,haas,brown hare,lagomorph,2,🐇,true,schreeuwen bij gevaar
+Oryctolagus cuniculus,konijn,European rabbit,lagomorph,3,🐇,true,trommelen en gillen bij gevaar
+Apodemus sylvaticus,bosmuis,wood mouse,rodent,3,🐭,true,hoge piepjes
+Rattus norvegicus,bruine rat,brown rat,rodent,3,🐀,true,piepen en knagen
+Arvicola amphibius,woelrat,water vole,rodent,2,🐭,true,plonzen en knagen bij water
+Microtus arvalis,veldmuis,common vole,rodent,3,🐭,true,hoge piepjes
+Erinaceus europaeus,egel,European hedgehog,insectivore,2,🦔,true,snuiven en piepen
+Talpa europaea,mol,European mole,insectivore,3,🐾,true,zelden gehoord; wroetgeluiden
+Sus scrofa,wild zwijn,wild boar,omnivore,1,🐗,true,knorren en grommen
+Canis lupus,wolf,grey wolf,carnivore,1,🐺,false,zeer zeldzaam in NL; huilen
+Felis catus,kat (verwilderd),feral cat,carnivore,3,🐱,true,miauwen en sissen
+Canis lupus familiaris,hond (loslopend),domestic dog,carnivore,3,🐶,true,blaffen
+Eptesicus serotinus,rosse vleermuis,serotine bat,chiroptera,2,🦇,false,vereist ultrasone microfoon (192 kHz)
+Pipistrellus pipistrellus,gewone dwergvleermuis,common pipistrelle,chiroptera,2,🦇,false,vereist ultrasone microfoon (192 kHz)

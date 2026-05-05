@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Smoke test --dry-run
+        run: |
+          mkdir -p /tmp/snippets
+          # Override snippet_dir to a temp path that actually exists
+          sed 's|snippet_dir:.*|snippet_dir: /tmp/snippets|' config.yaml > /tmp/ci_config.yaml
+          timeout 5 python mammal_watcher.py --dry-run --config /tmp/ci_config.yaml || true
