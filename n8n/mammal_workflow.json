@@ -1,30 +1,33 @@
 {
   "name": "Mammal Detection",
+  "description": "Ontvang mammal-watcher detecties via MQTT en stuur Telegram/InfluxDB alerts. Compatibel met n8n 2.8.4.",
   "nodes": [
     {
-      "parameters": {},
+      "parameters": {
+        "content": "## 🦡 Mammal-watcher workflow\n\nDeze workflow ontvangt detecties van de **mammal-watcher** service via MQTT.\n\n- **Tier 1** (zeldzaam): directe Telegram-alert met sirene-emoji\n- **Tier 2** (gewoon-interessant): vriendelijke Telegram-melding\n- **Alle tiers**: opslaan in InfluxDB voor Grafana-dashboard\n\n**Importeren:** Ga in n8n naar *Workflows → Import from file* en selecteer dit bestand.\nPas daarna de MQTT-, Telegram- en InfluxDB-credentials aan.\n\n**MQTT broker:** homeassistant:1883 — zelfde broker als BirdNET-Go.\n**Topic:** mammal/detection\n\n_Compatibel met n8n 2.8.4_"
+      },
       "id": "sticky-note-intro",
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [0, -200],
-      "parameters": {
-        "content": "## 🦡 Mammal-watcher workflow\n\nDeze workflow ontvangt detecties van de **mammal-watcher** service.\n\n- **Tier 1** (zeldzaam): directe Telegram-alert met sirene-emoji\n- **Tier 2** (gewoon-interessant): vriendelijke Telegram-melding\n- **Alle tiers**: opslaan in InfluxDB voor Grafana-dashboard\n\n**Importeren:** Ga in n8n naar *Workflows → Import from file* en selecteer dit bestand.\nPas daarna de Telegram-credentials en InfluxDB-verbinding aan."
-      }
+      "position": [0, -200]
     },
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "mammal-detection",
-        "responseMode": "onReceived",
+        "topics": "mammal/detection",
         "options": {}
       },
-      "id": "webhook-node",
-      "name": "Webhook",
-      "type": "n8n-nodes-base.webhook",
+      "id": "mqtt-trigger-node",
+      "name": "MQTT Trigger",
+      "type": "n8n-nodes-base.mqttTrigger",
       "typeVersion": 1,
       "position": [300, 0],
-      "webhookId": "mammal-detection"
+      "credentials": {
+        "mqtt": {
+          "id": "MQTT_CREDENTIAL_ID",
+          "name": "MQTT account"
+        }
+      }
     },
     {
       "parameters": {
@@ -47,7 +50,7 @@
     {
       "parameters": {
         "chatId": "JOUW_TELEGRAM_CHAT_ID",
-        "text": "=🚨 TIER 1 ZOOGDIER: {{$json[\"species_nl\"]}} ({{$json[\"confidence\"]}}) — {{$json[\"audio_path\"]}}",
+        "text": "=🚨 TIER 1 ZOOGDIER: {{$json[\"species_nl\"]}} {{$json[\"emoji\"]}} (conf={{$json[\"confidence\"]}}) — {{$json[\"source\"]}}",
         "additionalFields": {}
       },
       "id": "telegram-tier1",
@@ -83,7 +86,7 @@
     {
       "parameters": {
         "chatId": "JOUW_TELEGRAM_CHAT_ID",
-        "text": "={{$json[\"emoji\"] || \"🦡\"}} {{$json[\"species_nl\"]}} gehoord ({{$json[\"confidence\"]}})",
+        "text": "={{$json[\"emoji\"] || \"🦡\"}} {{$json[\"species_nl\"]}} gehoord (conf={{$json[\"confidence\"]}})",
         "additionalFields": {}
       },
       "id": "telegram-tier2",
@@ -155,7 +158,7 @@
     }
   ],
   "connections": {
-    "Webhook": {
+    "MQTT Trigger": {
       "main": [
         [
           {"node": "Tier 1?", "type": "main", "index": 0},
@@ -180,3 +183,4 @@
   "settings": {},
   "tags": ["mammal-watcher", "wildlife"]
 }
+

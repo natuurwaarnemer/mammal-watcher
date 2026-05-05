@@ -1,12 +1,14 @@
 """
 mammal_watcher.py — Hoofd-entry-point voor de mammal-watcher service.
 
-Bewaakt een map op nieuwe audio-snippets, laat ze door de classifier lopen
-en stuurt detecties door naar n8n via een webhook.
+Leest een RTSP-stroom via MediaMTX relay, classificeert 5-seconden
+audio-vensters op zoogdiergeluiden en publiceert detecties via MQTT
+(en optioneel via een n8n webhook).
 
 Gebruik:
-    python mammal_watcher.py
-    python mammal_watcher.py --dry-run   # print payloads, POST niks
+    python mammal_watcher.py --config config.yaml
+    python mammal_watcher.py --dry-run         # print payloads, geen MQTT/HTTP
+    python mammal_watcher.py --no-rtsp --dry-run  # CI smoke-test, exit 0
 
 Graceful shutdown via SIGTERM (Docker-veilig).
 """
@@ -16,22 +18,18 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import signal
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-import requests
-import soundfile as sf
 import yaml
-from watchdog.events import FileCreatedEvent, FileSystemEventHandler
-from watchdog.observers import Observer
 
 from classifier import BaseClassifier, StubClassifier
+
+__version__ = "0.2.0"
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +37,7 @@ from classifier import BaseClassifier, StubClassifier
 # ---------------------------------------------------------------------------
 
 def _setup_logging(level: str) -> None:
-    """Configure root logger with timestamp format."""
+    """Configureer de root logger met tijdstempelformat."""
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)-8s %(message)s",
@@ -56,7 +54,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def load_config(path: str = "config.yaml") -> dict:
-    """Load and return the YAML configuration file."""
+    """Laad en geef het YAML-configuratiebestand terug."""
     with open(path, encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
@@ -66,17 +64,18 @@ def load_config(path: str = "config.yaml") -> dict:
 # ---------------------------------------------------------------------------
 
 def load_species_index(csv_path: str) -> dict[str, dict]:
-    """Load species CSV into a dict keyed by scientific_name.
+    """Laad de soorten-CSV in een dict op scientific_name.
 
-    Returns an empty dict if the file does not exist.
+    Geeft een lege dict terug als het bestand niet bestaat.
     """
+    import csv
+
     index: dict[str, dict] = {}
     p = Path(csv_path)
     if not p.exists():
-        logger.warning("Species CSV not found: %s", csv_path)
+        logger.warning("Soorten-CSV niet gevonden: %s", csv_path)
         return index
 
-    import csv
     with open(p, newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
@@ -89,146 +88,58 @@ def load_species_index(csv_path: str) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 def build_payload(
-    audio_path: str,
+    source: str,
     audio: np.ndarray,
     sr: int,
     prediction: dict,
     species_index: dict[str, dict],
+    timestamp: datetime | None = None,
 ) -> dict[str, Any]:
-    """Combine audio metadata and classifier output into an n8n payload."""
+    """Combineer audio-metadata en classifier-output tot een MQTT-payload."""
+    if timestamp is None:
+        timestamp = datetime.now(tz=timezone.utc)
+
     duration_s = len(audio) / sr if sr > 0 else 0.0
     rms = float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
 
     species_info = species_index.get(prediction["species_scientific"], {})
 
     return {
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-        "audio_path": audio_path,
+        "timestamp": timestamp.isoformat(),
+        "source": source,
         "duration_s": round(duration_s, 3),
         "rms": round(rms, 6),
         "species_scientific": prediction["species_scientific"],
         "species_nl": prediction.get("species_nl", species_info.get("nl_name", "")),
+        "species_en": prediction.get("species_en", species_info.get("en_name", "")),
         "confidence": prediction["confidence"],
         "tier": prediction["tier"],
+        "emoji": prediction.get("emoji", species_info.get("emoji", "")),
         "model_version": prediction["model_version"],
     }
 
 
 # ---------------------------------------------------------------------------
-# n8n integration
+# n8n integratie (optioneel)
 # ---------------------------------------------------------------------------
 
 def post_to_n8n(payload: dict, webhook_url: str, timeout: int) -> None:
-    """POST a detection payload to the n8n webhook."""
+    """POST een detectie-payload naar de n8n webhook."""
+    import requests
+
     resp = requests.post(webhook_url, json=payload, timeout=timeout)
     resp.raise_for_status()
     logger.debug("n8n response %s", resp.status_code)
 
 
 # ---------------------------------------------------------------------------
-# File event handler
-# ---------------------------------------------------------------------------
-
-class AudioEventHandler(FileSystemEventHandler):
-    """Handle new audio files dropped into the watch directory."""
-
-    def __init__(
-        self,
-        cfg: dict,
-        classifier: BaseClassifier,
-        species_index: dict[str, dict],
-        dry_run: bool,
-    ) -> None:
-        super().__init__()
-        self._cfg = cfg
-        self._classifier = classifier
-        self._species_index = species_index
-        self._dry_run = dry_run
-        self._extensions: list[str] = cfg["watch"].get(
-            "file_extensions", [".wav", ".flac"]
-        )
-        self._min_confidence: float = cfg["classifier"].get("min_confidence", 0.4)
-        self._tier1_threshold: float = cfg["classifier"].get("tier1_threshold", 0.75)
-        self._tier2_threshold: float = cfg["classifier"].get("tier2_threshold", 0.5)
-        self._webhook_url: str = cfg["n8n"]["webhook_url"]
-        self._timeout: int = cfg["n8n"].get("timeout_s", 10)
-
-    def on_created(self, event: FileCreatedEvent) -> None:  # type: ignore[override]
-        """Process a newly created file if it is an audio file."""
-        if event.is_directory:
-            return
-        path = Path(event.src_path)
-        if path.suffix.lower() not in self._extensions:
-            return
-
-        logger.info("New file: %s", path)
-        self._process(str(path))
-
-    def _process(self, audio_path: str) -> None:
-        """Load audio, classify, and forward to n8n if confidence is sufficient."""
-        try:
-            audio, sr = sf.read(audio_path, dtype="float32", always_2d=False)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Cannot read %s: %s", audio_path, exc)
-            return
-
-        # Ensure mono
-        if audio.ndim > 1:
-            audio = audio.mean(axis=1)
-
-        try:
-            prediction = self._classifier.classify(audio, sr)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Classifier error for %s: %s", audio_path, exc)
-            return
-
-        confidence = prediction.get("confidence", 0.0)
-        if confidence < self._min_confidence:
-            logger.debug(
-                "Below threshold (%.2f < %.2f): %s",
-                confidence,
-                self._min_confidence,
-                audio_path,
-            )
-            return
-
-        # Override tier based on confidence thresholds from config.
-        # This allows fine-tuning alert sensitivity without changing the classifier.
-        if confidence >= self._tier1_threshold:
-            prediction["tier"] = 1
-        elif confidence >= self._tier2_threshold:
-            prediction["tier"] = 2
-        else:
-            prediction["tier"] = 3
-
-        payload = build_payload(audio_path, audio, sr, prediction, self._species_index)
-
-        tier = payload.get("tier", "-")
-        logger.info(
-            "Detected: %s (%s) conf=%.2f tier=%s",
-            payload["species_scientific"],
-            payload["species_nl"],
-            confidence,
-            tier,
-        )
-
-        if self._dry_run:
-            print(json.dumps(payload, indent=2, ensure_ascii=False))
-        else:
-            try:
-                post_to_n8n(payload, self._webhook_url, self._timeout)
-            except requests.RequestException as exc:
-                logger.error("n8n POST failed: %s", exc)
-
-
-# ---------------------------------------------------------------------------
-# Main
+# CLI
 # ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
+    """Verwerk command-line argumenten."""
     parser = argparse.ArgumentParser(
-        description="mammal-watcher — zoogdier-detectie naast BirdNET-Pi"
+        description="mammal-watcher — zoogdier-detectie via RTSP"
     )
     parser.add_argument(
         "--config",
@@ -238,71 +149,166 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print payloads naar stdout in plaats van naar n8n te posten",
+        help="Print payloads naar stdout in plaats van te publiceren",
+    )
+    parser.add_argument(
+        "--no-rtsp",
+        action="store_true",
+        help="CI-modus: verwerk één synthetisch buffer en sluit af met exitcode 0",
     )
     return parser.parse_args()
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> None:
-    """Entry-point: start the file watcher and block until SIGTERM/SIGINT."""
+    """Entry-point: start de RTSP-consumer en verwerk audio-vensters."""
     args = parse_args()
     cfg = load_config(args.config)
 
     _setup_logging(cfg.get("logging", {}).get("level", "INFO"))
 
-    # Build classifier
+    # Bouw classifier
     model_name = cfg.get("classifier", {}).get("model", "stub")
     if model_name == "stub":
         classifier: BaseClassifier = StubClassifier()
     else:
-        logger.warning("Unknown model '%s', falling back to stub", model_name)
+        logger.warning("Onbekend model '%s', gebruik stub als fallback", model_name)
         classifier = StubClassifier()
 
-    # Load species index
+    # Laad soorten-index
     species_csv = cfg.get("species_csv", "./species_mammals_nl.csv")
     species_index = load_species_index(species_csv)
 
-    snippet_dir = cfg["watch"]["snippet_dir"]
+    rtsp_url: str = cfg.get("rtsp", {}).get("url", "rtsp://localhost:8554/mic")
+    min_confidence: float = cfg.get("classifier", {}).get("min_confidence", 0.4)
+    tier1_threshold: float = cfg.get("classifier", {}).get("tier1_threshold", 0.75)
+    tier2_threshold: float = cfg.get("classifier", {}).get("tier2_threshold", 0.5)
+
+    n8n_cfg = cfg.get("n8n", {})
+    n8n_enabled: bool = n8n_cfg.get("enabled", False)
+    n8n_webhook_url: str = n8n_cfg.get("webhook_url", "")
+    n8n_timeout: int = n8n_cfg.get("timeout_s", 10)
+
+    mqtt_cfg = cfg.get("mqtt", {})
+    mqtt_enabled: bool = mqtt_cfg.get("enabled", True) and not args.dry_run
 
     if args.dry_run:
-        logger.info("DRY-RUN mode — geen POSTs naar n8n")
+        logger.info("DRY-RUN modus — geen MQTT/HTTP publicatie")
 
-    logger.info("Watching %s", snippet_dir)
+    # MQTT opstarten
+    publisher = None
+    if mqtt_enabled:
+        from mqtt_publisher import MQTTPublisher
 
-    # Ensure the watch directory exists.  If it doesn't (e.g. during testing),
-    # try to create it; if that's not possible, exit with a clear message.
-    try:
-        os.makedirs(snippet_dir, exist_ok=True)
-    except OSError:
-        pass  # Directory may exist but be read-only (mounted volume); that's fine.
-
-    if not os.path.isdir(snippet_dir):
-        logger.error(
-            "Watch directory does not exist and cannot be created: %s",
-            snippet_dir,
+        publisher = MQTTPublisher(
+            broker=mqtt_cfg.get("broker", "homeassistant"),
+            port=mqtt_cfg.get("port", 1883),
+            username=mqtt_cfg.get("username"),
+            password=mqtt_cfg.get("password"),
+            topic_detections=mqtt_cfg.get("topic_detections", "mammal/detection"),
+            topic_status=mqtt_cfg.get("topic_status", "mammal/status"),
+            ha_discovery=mqtt_cfg.get("ha_discovery", True),
         )
-        sys.exit(1)
+        publisher.connect()
 
-    handler = AudioEventHandler(cfg, classifier, species_index, dry_run=args.dry_run)
-    observer = Observer()
-    observer.schedule(handler, snippet_dir, recursive=False)
-    observer.start()
+    # Graceful shutdown op SIGTERM (Docker stop)
+    _running = True
 
-    # Graceful shutdown on SIGTERM (Docker stop)
     def _shutdown(signum: int, frame: object) -> None:  # noqa: ARG001
-        logger.info("Received signal %d, shutting down …", signum)
-        observer.stop()
+        nonlocal _running
+        logger.info("Signaal %d ontvangen, afsluiten …", signum)
+        _running = False
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
+    def _process_window(
+        audio: np.ndarray, sr: int, ts: datetime
+    ) -> None:
+        """Classificeer één audio-venster en publiceer indien relevant."""
+        try:
+            prediction = classifier.classify(audio, sr)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Classifier-fout: %s", exc)
+            return
+
+        confidence = prediction.get("confidence", 0.0)
+        if confidence < min_confidence:
+            return
+
+        if confidence >= tier1_threshold:
+            prediction["tier"] = 1
+        elif confidence >= tier2_threshold:
+            prediction["tier"] = 2
+        else:
+            prediction["tier"] = 3
+
+        payload = build_payload(
+            rtsp_url, audio, sr, prediction, species_index, timestamp=ts
+        )
+
+        logger.info(
+            "Gedetecteerd: %s (%s) conf=%.2f tier=%s",
+            payload["species_scientific"],
+            payload["species_nl"],
+            confidence,
+            payload["tier"],
+        )
+
+        if args.dry_run:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            if publisher is not None:
+                publisher.publish(payload)
+            if n8n_enabled and n8n_webhook_url:
+                try:
+                    post_to_n8n(payload, n8n_webhook_url, n8n_timeout)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("n8n POST mislukt: %s", exc)
+
     try:
-        while observer.is_alive():
-            time.sleep(1)
+        if args.no_rtsp:
+            # CI-modus: verwerk één synthetisch buffer en sluit af
+            logger.info("--no-rtsp: synthetisch buffer verwerken")
+            rng = np.random.default_rng(42)
+            audio = rng.random(5 * 48000).astype(np.float32) * 0.1
+            ts = datetime.now(tz=timezone.utc)
+            _process_window(audio, 48000, ts)
+            logger.info("--no-rtsp modus: klaar, exitcode 0")
+            return
+
+        # Normale RTSP-modus
+        from rtsp_consumer import RTSPConsumer
+
+        audio_cfg = cfg.get("audio", {})
+        rtsp_cfg = cfg.get("rtsp", {})
+
+        consumer = RTSPConsumer(
+            url=rtsp_url,
+            target_sr=audio_cfg.get("target_sample_rate", 48000),
+            window_seconds=audio_cfg.get("window_seconds", 5.0),
+            hop_seconds=audio_cfg.get("hop_seconds", 5.0),
+            reconnect_initial_s=rtsp_cfg.get("reconnect_initial_s", 1.0),
+            reconnect_max_s=rtsp_cfg.get("reconnect_max_s", 30.0),
+        )
+
+        try:
+            for audio, sr, ts in consumer.iter_windows():
+                if not _running:
+                    break
+                _process_window(audio, sr, ts)
+        finally:
+            consumer.stop()
+
     finally:
-        observer.join()
+        if publisher is not None:
+            publisher.disconnect()
         logger.info("mammal-watcher gestopt")
 
 
 if __name__ == "__main__":
     main()
+

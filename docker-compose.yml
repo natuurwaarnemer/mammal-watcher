@@ -1,10 +1,26 @@
 services:
-  mammal-watcher:
-    build: .
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mammal-mediamtx
     restart: unless-stopped
     network_mode: host
     volumes:
-      - /home/pi/BirdNET-Pi/BirdSongs/Extracted:/home/pi/BirdNET-Pi/BirdSongs/Extracted:ro
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9997/v3/paths/list"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  mammal-watcher:
+    build: .
+    container_name: mammal-watcher
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      mediamtx:
+        condition: service_healthy
+    volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./species_mammals_nl.csv:/app/species_mammals_nl.csv:ro
     environment:

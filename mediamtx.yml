@@ -1,0 +1,11 @@
+logLevel: info
+api: yes
+apiAddress: 127.0.0.1:9997
+
+paths:
+  mic:
+    source: rtsp://192.168.2.20:8554/audio
+    sourceProtocol: tcp
+    sourceOnDemand: yes
+    sourceOnDemandStartTimeout: 10s
+    sourceOnDemandCloseAfter: 10s

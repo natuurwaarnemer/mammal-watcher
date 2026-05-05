@@ -1,5 +1,6 @@
-watchdog>=3.0
-soundfile>=0.12
+av>=12.0
 numpy>=1.24
-requests>=2.31
+soundfile>=0.12
+paho-mqtt>=2.0
 pyyaml>=6.0
+requests>=2.31
