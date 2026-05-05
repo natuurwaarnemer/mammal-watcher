@@ -1,0 +1,182 @@
+{
+  "name": "Mammal Detection",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "sticky-note-intro",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, -200],
+      "parameters": {
+        "content": "## 🦡 Mammal-watcher workflow\n\nDeze workflow ontvangt detecties van de **mammal-watcher** service.\n\n- **Tier 1** (zeldzaam): directe Telegram-alert met sirene-emoji\n- **Tier 2** (gewoon-interessant): vriendelijke Telegram-melding\n- **Alle tiers**: opslaan in InfluxDB voor Grafana-dashboard\n\n**Importeren:** Ga in n8n naar *Workflows → Import from file* en selecteer dit bestand.\nPas daarna de Telegram-credentials en InfluxDB-verbinding aan."
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mammal-detection",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [300, 0],
+      "webhookId": "mammal-detection"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json[\"tier\"]}}",
+              "operation": "equal",
+              "value2": 1
+            }
+          ]
+        }
+      },
+      "id": "if-tier1",
+      "name": "Tier 1?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [550, 0]
+    },
+    {
+      "parameters": {
+        "chatId": "JOUW_TELEGRAM_CHAT_ID",
+        "text": "=🚨 TIER 1 ZOOGDIER: {{$json[\"species_nl\"]}} ({{$json[\"confidence\"]}}) — {{$json[\"audio_path\"]}}",
+        "additionalFields": {}
+      },
+      "id": "telegram-tier1",
+      "name": "Telegram Tier 1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [800, -100],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json[\"tier\"]}}",
+              "operation": "equal",
+              "value2": 2
+            }
+          ]
+        }
+      },
+      "id": "if-tier2",
+      "name": "Tier 2?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [800, 100]
+    },
+    {
+      "parameters": {
+        "chatId": "JOUW_TELEGRAM_CHAT_ID",
+        "text": "={{$json[\"emoji\"] || \"🦡\"}} {{$json[\"species_nl\"]}} gehoord ({{$json[\"confidence\"]}})",
+        "additionalFields": {}
+      },
+      "id": "telegram-tier2",
+      "name": "Telegram Tier 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1050, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "url": "http://hp640.local:8086",
+        "bucket": "wildlife",
+        "org": "thuis",
+        "measurement": "mammal_detection",
+        "tags": {
+          "tag": [
+            {
+              "name": "species_scientific",
+              "value": "={{$json[\"species_scientific\"]}}"
+            },
+            {
+              "name": "tier",
+              "value": "={{$json[\"tier\"]}}"
+            },
+            {
+              "name": "model_version",
+              "value": "={{$json[\"model_version\"]}}"
+            }
+          ]
+        },
+        "fields": {
+          "field": [
+            {
+              "name": "confidence",
+              "type": "float",
+              "value": "={{$json[\"confidence\"]}}"
+            },
+            {
+              "name": "rms",
+              "type": "float",
+              "value": "={{$json[\"rms\"]}}"
+            },
+            {
+              "name": "duration_s",
+              "type": "float",
+              "value": "={{$json[\"duration_s\"]}}"
+            }
+          ]
+        }
+      },
+      "id": "influxdb-node",
+      "name": "InfluxDB",
+      "type": "n8n-nodes-base.influxDb",
+      "typeVersion": 1,
+      "position": [550, 200],
+      "credentials": {
+        "influxDbApi": {
+          "id": "INFLUXDB_CREDENTIAL_ID",
+          "name": "InfluxDB"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {"node": "Tier 1?", "type": "main", "index": 0},
+          {"node": "InfluxDB", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Tier 1?": {
+      "main": [
+        [{"node": "Telegram Tier 1", "type": "main", "index": 0}],
+        [{"node": "Tier 2?", "type": "main", "index": 0}]
+      ]
+    },
+    "Tier 2?": {
+      "main": [
+        [{"node": "Telegram Tier 2", "type": "main", "index": 0}],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "tags": ["mammal-watcher", "wildlife"]
+}

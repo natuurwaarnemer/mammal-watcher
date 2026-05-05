@@ -1,0 +1,11 @@
+services:
+  mammal-watcher:
+    build: .
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /home/pi/BirdNET-Pi/BirdSongs/Extracted:/home/pi/BirdNET-Pi/BirdSongs/Extracted:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ./species_mammals_nl.csv:/app/species_mammals_nl.csv:ro
+    environment:
+      - PYTHONUNBUFFERED=1
