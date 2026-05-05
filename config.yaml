@@ -1,19 +1,33 @@
-watch:
-  snippet_dir: /home/pi/BirdNET-Pi/BirdSongs/Extracted
-  file_extensions: [".wav", ".flac"]
+rtsp:
+  url: rtsp://localhost:8554/mic
+  reconnect_initial_s: 1
+  reconnect_max_s: 30
 
-n8n:
-  # Pas dit aan naar het adres van jouw n8n-installatie
-  webhook_url: "http://hp630.local:5678/webhook/mammal-detection"
-  timeout_s: 10
+audio:
+  target_sample_rate: 48000
+  window_seconds: 5.0
+  hop_seconds: 5.0
 
 classifier:
-  model: "stub"   # later: yamnet | perch | custom_cnn
+  model: stub
   min_confidence: 0.4
-  # Classifier-confidence >= tier1_threshold → tier 1 (zeldzaam, directe alert)
   tier1_threshold: 0.75
-  # Classifier-confidence >= tier2_threshold → tier 2 (gewoon-interessant)
   tier2_threshold: 0.5
+
+mqtt:
+  enabled: true
+  broker: homeassistant
+  port: 1883
+  username: birdnet
+  password: secret
+  topic_detections: mammal/detection
+  topic_status: mammal/status
+  ha_discovery: true
+
+n8n:
+  enabled: false
+  webhook_url: http://localhost:5678/webhook/mammal-detection
+  timeout_s: 10
 
 species_csv: ./species_mammals_nl.csv
 

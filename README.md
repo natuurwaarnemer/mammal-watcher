@@ -1,94 +1,83 @@
 # mammal-watcher 🦡
 
-**mammal-watcher** is een Python-service die naast je bestaande
-[BirdNET-Pi](https://github.com/mcguirepr89/BirdNET-Pi) installatie draait.
-Hij luistert naar dezelfde audio-snippets die BirdNET-Pi aanmaakt en analyseert
-die op **zoogdiergeluiden** in plaats van vogels. De resultaten worden via een
-webhook naar n8n gestuurd, die ze doorstuurt naar InfluxDB (Grafana-dashboards)
-en Telegram (alerts voor bijzondere soorten).
+**mammal-watcher** is een Python-service die zoogdiergeluiden detecteert via
+een live RTSP-audiostream. Hij luistert naar een ESP32-I²S-microfoon via een
+MediaMTX relay, analyseert 5-seconden vensters op **zoogdiergeluiden** en
+stuurt detecties via MQTT naar Home Assistant, n8n en InfluxDB.
+
+Zie **[INSTALL.md](INSTALL.md)** voor de volledige stap-voor-stap handleiding.
+
+---
+
+## Hardware
+
+| Component | Details |
+|---|---|
+| 🎙️ Microfoon | ESP32-C6 met I²S mic — `rtsp://192.168.2.20:8554/audio` @ 54 kHz mono |
+| 🖥️ Server | HP T630 (`n8nserver`, 192.168.2.35) — Ubuntu 24.04, Docker 29.4.2 |
+| 🐦 Vogel-detector | BirdNET-Go op NUC (192.168.2.23) |
+| 📡 MQTT broker | Home Assistant (`homeassistant:1883`) |
+| 🤖 Automatisering | n8n 2.8.4 (native systemd op T630) |
 
 ---
 
 ## Architectuur
 
 ```
- BirdNET-Pi snippetmap
- /home/pi/BirdNET-Pi/BirdSongs/Extracted/
-         │
-         │  nieuwe .wav of .flac bestanden
-         ▼
- ┌────────────────────┐
- │  mammal-watcher    │  ← draait als Docker-container
- │  (deze service)    │
- └────────┬───────────┘
-          │  JSON payload via HTTP POST
-          ▼
- ┌────────────────────┐
- │  n8n webhook       │  ← op hp630.local
- │  /mammal-detection │
- └────────┬───────────┘
-          │
-    ┌─────┴──────┐
-    ▼            ▼
- InfluxDB     Telegram
- (Grafana)    Tier1/Tier2
+ESP32-C6 (192.168.2.20:8554)
+        │
+        ▼ RTSP (1 publisher slot)
+┌───────────────────────────────────────┐
+│  HP T630 (n8nserver, 192.168.2.35)    │
+│  ┌─────────────┐    ┌──────────────┐  │
+│  │  MediaMTX   │───▶│ mammal-      │  │
+│  │  :8554      │    │ watcher      │  │
+│  │  (Docker)   │    │ (Docker)     │  │
+│  └──────┬──────┘    └──────┬───────┘  │
+└─────────┼──────────────────┼──────────┘
+          │ RTSP relay       │ MQTT publish
+          ▼                  ▼
+   NUC: BirdNET-Go     homeassistant:1883
+   (straks ompluggen        │
+    naar T630:8554/mic)     ▼
+                       n8n / Telegraf / HA
 ```
+
+**Waarom MediaMTX?** De ESP32 accepteert maar één RTSP-client tegelijk.
+MediaMTX relay lost dit op: BirdNET-Go én mammal-watcher kunnen beiden
+de stream ontvangen.
 
 ---
 
 ## Snelle start
 
-### 1. Clone de repo
+Zie **[INSTALL.md](INSTALL.md)** voor de volledige handleiding. Kort samengevat:
 
 ```bash
+# Repo clonen
 git clone https://github.com/natuurwaarnemer/mammal-watcher.git
 cd mammal-watcher
+
+# Config aanpassen (MQTT-credentials)
+nano config.yaml
+
+# MediaMTX relay starten en testen
+docker compose up -d mediamtx
+ffprobe -rtsp_transport tcp rtsp://localhost:8554/mic
+
+# mammal-watcher starten
+docker compose up -d mammal-watcher
+docker logs -f mammal-watcher
 ```
 
-### 2. Pas de instellingen aan
-
-Open `config.yaml` in een tekstverwerker en stel in:
-
-- `watch.snippet_dir` — pad naar de BirdNET-Pi snippetmap
-- `n8n.webhook_url` — adres van je n8n-instantie
-- `classifier.min_confidence` — minimale betrouwbaarheid voor een melding
-
-```yaml
-watch:
-  snippet_dir: /home/pi/BirdNET-Pi/BirdSongs/Extracted
-n8n:
-  webhook_url: "http://hp630.local:5678/webhook/mammal-detection"
-```
-
-### 3. Start de service
+### Dry-run (lokaal testen zonder MQTT)
 
 ```bash
-docker compose up -d
+python mammal_watcher.py --no-rtsp --dry-run --config config.yaml
 ```
 
-De container start automatisch opnieuw op als je de computer herstart
-(`restart: unless-stopped`).
-
-### 4. Controleer of het werkt
-
-```bash
-docker compose logs -f
-```
-
-Je ziet regels als:
-```
-2026-05-05 18:00:00 INFO  Watching /home/pi/BirdNET-Pi/BirdSongs/Extracted
-2026-05-05 18:02:13 INFO  Detected: Vulpes vulpes (vos) conf=0.82 tier=2
-```
-
-### Testen zonder echt te posten (dry-run)
-
-```bash
-python mammal_watcher.py --dry-run
-```
-
-Hiermee wordt er **niks naar n8n gestuurd** — payloads worden alleen op het
-scherm geprint. Handig om te controleren of alles werkt.
+Prints één sample payload naar stdout en sluit af met exitcode 0. Handig
+om te controleren of de pipeline werkt zonder echte hardware.
 
 ---
 
@@ -96,11 +85,11 @@ scherm geprint. Handig om te controleren of alles werkt.
 
 | PR | Wat |
 |----|-----|
-| **#1** (dit) | Projectgeraamte met stub-classifier — bewijst de plumbing |
-| **#2** | Echt ML-model (YAMNet + fine-tuning op NL-zoogdieren) |
-| **#3** | Trainings-pipeline: data verzamelen, labels, model bouwen |
-| **#4** | NatureLM-integratie voor gedragsanalyse (lokroep, alarm, juveniel) |
-| **#5** | Veldkastje: Raspberry Pi + 4G + zonnepaneel |
+| **#1** | Projectgeraamte met stub-classifier — bewijst de plumbing |
+| **#2** | Architectuur-pivot: RTSP + MediaMTX + MQTT (dit) |
+| **#4** | Echt ML-model: YAMNet of fine-tuned variant op NL-zoogdieren |
+| **#5** | Trainings-pipeline: data verzamelen, labels, model bouwen |
+| **#6** | NatureLM-integratie voor gedragsanalyse (lokroep, alarm, juveniel) |
 
 ---
 
@@ -124,10 +113,10 @@ Kort samengevat: **Issues = kladblok, PR = voorstel, main = werkend.**
 
 ## Dankwoord
 
-Dit project is gebaseerd op de geweldige infrastructuur van
-[BirdNET-Pi](https://github.com/mcguirepr89/BirdNET-Pi) — een open-source
-project van Patrick McGuire dat real-time vogelherkenning mogelijk maakt op
-een Raspberry Pi. Zonder die basis was mammal-watcher er niet geweest.
+Dit project maakt gebruik van [BirdNET-Go](https://github.com/tphakala/birdnet-go)
+voor vogeldetectie en [MediaMTX](https://github.com/bluenviron/mediamtx) voor
+de RTSP relay. Zonder die open-source bouwstenen was mammal-watcher er niet
+geweest.
 
 ---
 

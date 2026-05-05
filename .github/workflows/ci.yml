@@ -20,7 +20,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsndfile1
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libsndfile1
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt pytest
@@ -28,9 +28,5 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v
 
-      - name: Smoke test --dry-run
-        run: |
-          mkdir -p /tmp/snippets
-          # Override snippet_dir to a temp path that actually exists
-          sed 's|snippet_dir:.*|snippet_dir: /tmp/snippets|' config.yaml > /tmp/ci_config.yaml
-          timeout 5 python mammal_watcher.py --dry-run --config /tmp/ci_config.yaml || true
+      - name: Smoke test --no-rtsp --dry-run
+        run: python mammal_watcher.py --no-rtsp --dry-run --config config.yaml
