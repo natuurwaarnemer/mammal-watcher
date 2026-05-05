@@ -85,7 +85,9 @@ class StubClassifier(BaseClassifier):
         of audio bytes) to generate Telegram alerts during testing.
         """
         audio_hash = int(
-            hashlib.md5(audio.tobytes()).hexdigest(), 16  # noqa: S324
+            # MD5 used for deterministic species selection only — not for security
+            hashlib.md5(audio.tobytes()).hexdigest(),  # noqa: S324
+            16,
         )
         rms = float(np.mean(np.abs(audio)))
 

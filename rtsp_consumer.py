@@ -106,7 +106,7 @@ class RTSPConsumer:
                     samples = samples.astype(np.float32)
 
                     # Normaliseer s16 → float32 [-1, 1] als nodig
-                    if samples.dtype != np.float32 or samples.max() > 1.0:
+                    if samples.dtype != np.float32 or np.abs(samples).max() > 1.0:
                         samples = samples / 32768.0
 
                     # Resample als samplerate afwijkt van doelrate
