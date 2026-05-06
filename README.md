@@ -21,31 +21,43 @@ Zie **[INSTALL.md](INSTALL.md)** voor de volledige stap-voor-stap handleiding.
 
 ---
 
-## Architectuur
+## Architectuur (live as of v0.3)
 
 ```
-ESP32-C6 (192.168.2.20:8554)
+ESP32-C6 (192.168.2.20:8554/audio)
         │
-        ▼ RTSP (1 publisher slot)
-┌───────────────────────────────────────┐
-│  HP T630 (n8nserver, 192.168.2.35)    │
-│  ┌─────────────┐    ┌──────────────┐  │
-│  │  MediaMTX   │───▶│ mammal-      │  │
-│  │  :8554      │    │ watcher      │  │
-│  │  (Docker)   │    │ (Docker)     │  │
-│  └──────┬──────┘    └──────┬───────┘  │
-└─────────┼──────────────────┼──────────┘
-          │ RTSP relay       │ MQTT publish
-          ▼                  ▼
-   NUC: BirdNET-Go     homeassistant:1883
-   (straks ompluggen        │
-    naar T630:8554/mic)     ▼
-                       n8n / Telegraf / HA
+        ▼ RTSP/TCP pull
+┌───────────────────────────────────────────────┐
+│  HP T630 (n8nserver, 192.168.2.35)            │
+│                                               │
+│  ┌──────────────┐   push /mic                 │
+│  │ rtsp-bridge  │──────────────┐              │
+│  │ (ffmpeg)     │              ▼              │
+│  └──────────────┘    ┌──────────────────┐     │
+│                      │    MediaMTX      │     │
+│                      │   :8554/mic      │     │
+│                      │   (Docker)       │     │
+│                      └────────┬─────────┘     │
+│                 RTSP fan-out  │               │
+│           ┌───────────────────┤               │
+│           ▼                   ▼               │
+│  ┌──────────────┐   ┌──────────────────┐      │
+│  │ mammal-      │   │  BirdNET-Go      │      │
+│  │ watcher      │   │  (NUC :8554/mic) │      │
+│  │ (Docker)     │   └──────────────────┘      │
+│  └──────┬───────┘                             │
+└─────────┼──────────────────────────────────────┘
+          │ MQTT publish
+          ▼
+   homeassistant:1883 → Home Assistant sensors
 ```
 
-**Waarom MediaMTX?** De ESP32 accepteert maar één RTSP-client tegelijk.
-MediaMTX relay lost dit op: BirdNET-Go én mammal-watcher kunnen beiden
-de stream ontvangen.
+**Waarom ffmpeg-bridge + `source: publisher`?**
+De ESP32-firmware accepteert maar één RTSP-client tegelijk. MediaMTX's
+ingebouwde RTSP-client veroorzaakte `unexpected interleaved frame`-fouten
+met de ESP32-firmware. ffmpeg als pull/push bridge lost dit op: hij trekt
+de stream van de ESP32 en pusht naar MediaMTX (`source: publisher`), waarna
+MediaMTX de stream naar meerdere consumers fan-out (BirdNET-Go én mammal-watcher).
 
 ---
 
@@ -54,20 +66,24 @@ de stream ontvangen.
 Zie **[INSTALL.md](INSTALL.md)** voor de volledige handleiding. Kort samengevat:
 
 ```bash
-# Repo clonen
+# 1. Repo clonen
 git clone https://github.com/natuurwaarnemer/mammal-watcher.git
 cd mammal-watcher
 
-# Config aanpassen (MQTT-credentials)
+# 2. ESP32 IP instellen
+cp .env.example .env
+nano .env   # pas ESP32_RTSP_URL aan naar het adres van jouw ESP32
+
+# 3. Config aanpassen (MQTT-credentials)
 nano config.yaml
 
-# MediaMTX relay starten en testen
-docker compose up -d mediamtx
-ffprobe -rtsp_transport tcp rtsp://localhost:8554/mic
+# 4. Stack starten
+docker compose up -d
 
-# mammal-watcher starten
-docker compose up -d mammal-watcher
-docker logs -f mammal-watcher
+# 5. BirdNET-Go ompluggen naar de MediaMTX relay
+#    Verander in BirdNET-Go config:
+#    rtsp.url: rtsp://<T630-host>:8554/mic
+#    (was: rtsp://192.168.2.20:8554/audio)
 ```
 
 ### Dry-run (lokaal testen zonder MQTT)
@@ -78,6 +94,36 @@ python mammal_watcher.py --no-rtsp --dry-run --config config.yaml
 
 Prints één sample payload naar stdout en sluit af met exitcode 0. Handig
 om te controleren of de pipeline werkt zonder echte hardware.
+
+---
+
+## Probleemoplossing
+
+### ESP32 weigert verbinding / rtsp-bridge crash-loops
+
+De ESP32-firmware accepteert **maar één RTSP-client tegelijk**. Als BirdNET-Go
+nog direct op `rtsp://192.168.2.20:8554/audio` luistert op het moment dat
+rtsp-bridge probeert te verbinden, verbreekt de ESP32 één van de verbindingen
+en eindigt rtsp-bridge in een restart-loop.
+
+**Eerste keer opstarten — volgorde is belangrijk:**
+
+1. Schakel de BirdNET-Go stream **uit** (of verander de URL tijdelijk) voordat
+   je ffmpeg-bridge start.
+2. Start de stack: `docker compose up -d`
+3. Controleer dat rtsp-bridge verbonden is:
+   `docker logs mammal-rtsp-bridge | tail -5`
+4. Wijs BirdNET-Go opnieuw naar `rtsp://<T630-host>:8554/mic` (de MediaMTX relay).
+   Nu kunnen beide consumers parallel luisteren.
+
+### RTP-pakket waarschuwing in MediaMTX logs
+
+```
+RTP packets are too big (1460 > 1440), remuxing them into smaller ones
+```
+
+Dit is **onschadelijk**. De ESP32 stuurt RTP-pakketten van 1460 bytes; MediaMTX
+fragmenteert ze automatisch naar ≤ 1440 bytes zonder dataverlies. Geen actie nodig.
 
 ---
 

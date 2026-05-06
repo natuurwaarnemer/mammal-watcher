@@ -6,11 +6,27 @@ services:
     network_mode: host
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9997/v3/paths/list"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+
+  rtsp-bridge:
+    image: linuxserver/ffmpeg:latest
+    container_name: mammal-rtsp-bridge
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - mediamtx
+    entrypoint:
+      - ffmpeg
+      - -rtsp_transport
+      - tcp
+      - -i
+      - ${ESP32_RTSP_URL}
+      - -c
+      - copy
+      - -f
+      - rtsp
+      - -rtsp_transport
+      - tcp
+      - rtsp://localhost:8554/mic
 
   mammal-watcher:
     build: .
@@ -18,8 +34,8 @@ services:
     restart: unless-stopped
     network_mode: host
     depends_on:
-      mediamtx:
-        condition: service_healthy
+      - mediamtx
+      - rtsp-bridge
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./species_mammals_nl.csv:/app/species_mammals_nl.csv:ro
