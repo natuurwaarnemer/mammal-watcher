@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import signal
 import sys
 from datetime import datetime, timezone
@@ -26,8 +27,9 @@ from typing import Any
 
 import numpy as np
 import yaml
+import soundfile as sf
 
-from classifier import BaseClassifier, StubClassifier
+from classifier import BaseClassifier, StubClassifier, YAMNetClassifier
 
 __version__ = "0.2.0"
 
@@ -47,6 +49,95 @@ def _setup_logging(level: str) -> None:
 
 
 logger = logging.getLogger(__name__)
+
+
+class ClipSaver:
+    """Sla detectie-audio op als WAV met JSONL-index voor latere training."""
+
+    def __init__(
+        self,
+        clips_dir: str,
+        enabled: bool = True,
+        save_uncertain: bool = True,
+        uncertain_threshold: float = 0.5,
+        max_clips_per_day: int = 500,
+    ) -> None:
+        self.enabled = enabled
+        self.save_uncertain = save_uncertain
+        self.uncertain_threshold = float(np.clip(uncertain_threshold, 0.0, 1.0))
+        self.max_clips_per_day = int(max_clips_per_day)
+        self.clips_dir = Path(clips_dir)
+        self.confirmed_dir = self.clips_dir / "confirmed"
+        self.uncertain_dir = self.clips_dir / "uncertain"
+        self.index_path = self.clips_dir / "index.jsonl"
+        if self.enabled:
+            self.confirmed_dir.mkdir(parents=True, exist_ok=True)
+            self.uncertain_dir.mkdir(parents=True, exist_ok=True)
+            self.index_path.touch(exist_ok=True)
+
+    def _slug(self, value: str) -> str:
+        """Maak een filesystem-veilige slug van vrije tekst."""
+        slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+        return slug or "unknown"
+
+    def _count_clips_today(self, day_prefix: str) -> int:
+        if not self.index_path.exists():
+            return 0
+        count = 0
+        with open(self.index_path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                timestamp = str(row.get("timestamp", ""))
+                if timestamp.startswith(day_prefix):
+                    count += 1
+        return count
+
+    def save(self, audio: np.ndarray, sr: int, payload: dict[str, Any]) -> str | None:
+        if not self.enabled:
+            return None
+
+        timestamp = str(payload.get("timestamp", datetime.now(tz=timezone.utc).isoformat()))
+        day_prefix = timestamp[:10]
+        if self._count_clips_today(day_prefix) >= self.max_clips_per_day:
+            logger.warning("Cliplimiet voor vandaag bereikt (%s)", self.max_clips_per_day)
+            return None
+
+        confidence = float(payload.get("confidence", 0.0))
+        is_uncertain = confidence < self.uncertain_threshold
+        if is_uncertain and not self.save_uncertain:
+            return None
+
+        target_dir = self.uncertain_dir if is_uncertain else self.confirmed_dir
+        try:
+            ts_dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            ts_dt = datetime.now(tz=timezone.utc)
+        ts_safe = ts_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+        species_slug = self._slug(str(payload.get("species_nl", "unknown")))
+        filename = f"{ts_safe}_{species_slug}_conf{confidence:.2f}.wav"
+        wav_path = target_dir / filename
+
+        samples = np.asarray(audio, dtype=np.float32).reshape(-1)
+        sf.write(str(wav_path), samples, sr, subtype="PCM_16")
+        duration_s = float(payload.get("duration_s", len(samples) / sr if sr > 0 else 0.0))
+
+        metadata = {
+            "timestamp": timestamp,
+            "filename": str(Path(target_dir.name) / filename),
+            "species_scientific": payload.get("species_scientific", ""),
+            "species_nl": payload.get("species_nl", ""),
+            "confidence": confidence,
+            "tier": int(payload.get("tier", 3)),
+            "model_version": payload.get("model_version", ""),
+            "duration_s": duration_s,
+            "rms": float(payload.get("rms", 0.0)),
+        }
+        with open(self.index_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(metadata, ensure_ascii=False) + "\n")
+        return str(wav_path)
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +265,14 @@ def main() -> None:
     model_name = cfg.get("classifier", {}).get("model", "stub")
     if model_name == "stub":
         classifier: BaseClassifier = StubClassifier()
+    elif model_name == "yamnet":
+        try:
+            classifier = YAMNetClassifier(
+                min_score=cfg.get("classifier", {}).get("yamnet_min_score", 0.1)
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("YAMNet laden mislukt, gebruik stub fallback")
+            classifier = StubClassifier()
     else:
         logger.warning("Onbekend model '%s', gebruik stub als fallback", model_name)
         classifier = StubClassifier()
@@ -186,6 +285,14 @@ def main() -> None:
     min_confidence: float = cfg.get("classifier", {}).get("min_confidence", 0.4)
     tier1_threshold: float = cfg.get("classifier", {}).get("tier1_threshold", 0.75)
     tier2_threshold: float = cfg.get("classifier", {}).get("tier2_threshold", 0.5)
+    clips_cfg = cfg.get("clips", {})
+    clip_saver = ClipSaver(
+        clips_dir=clips_cfg.get("clips_dir", "./clips"),
+        enabled=clips_cfg.get("enabled", True),
+        save_uncertain=clips_cfg.get("save_uncertain", True),
+        uncertain_threshold=clips_cfg.get("uncertain_threshold", 0.5),
+        max_clips_per_day=clips_cfg.get("max_clips_per_day", 500),
+    )
 
     n8n_cfg = cfg.get("n8n", {})
     n8n_enabled: bool = n8n_cfg.get("enabled", False)
@@ -234,6 +341,8 @@ def main() -> None:
         except Exception as exc:  # noqa: BLE001
             logger.error("Classifier-fout: %s", exc)
             return
+        if not prediction:
+            return
 
         confidence = prediction.get("confidence", 0.0)
         if confidence < min_confidence:
@@ -249,6 +358,7 @@ def main() -> None:
         payload = build_payload(
             rtsp_url, audio, sr, prediction, species_index, timestamp=ts
         )
+        clip_saver.save(audio, sr, payload)
 
         logger.info(
             "Gedetecteerd: %s (%s) conf=%.2f tier=%s",
@@ -311,4 +421,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

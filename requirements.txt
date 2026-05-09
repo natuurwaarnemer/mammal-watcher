@@ -4,3 +4,6 @@ soundfile>=0.12
 paho-mqtt>=2.0
 pyyaml>=6.0
 requests>=2.31
+tensorflow-cpu>=2.13
+tensorflow-hub>=0.14
+scipy>=1.10

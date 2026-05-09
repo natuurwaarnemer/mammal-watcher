@@ -9,10 +9,18 @@ audio:
   hop_seconds: 5.0
 
 classifier:
-  model: stub
+  model: yamnet
   min_confidence: 0.4
   tier1_threshold: 0.75
   tier2_threshold: 0.5
+  yamnet_min_score: 0.1
+
+clips:
+  enabled: true
+  clips_dir: ./clips
+  save_uncertain: true
+  uncertain_threshold: 0.5
+  max_clips_per_day: 500
 
 mqtt:
   enabled: true
