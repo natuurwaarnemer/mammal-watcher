@@ -186,7 +186,8 @@ class YAMNetClassifier(BaseClassifier):
             return self._MAPPING[79]
 
         centroid_hz = float(np.sum(freqs * magnitudes) / denom)
-        # Eenvoudige heuristiek: >3kHz typisch piepband (muis), 1.8–3kHz vaker eekhoorn.
+        # Spectrale centroid benadert waar de energieband zit: hoger = kleinere piepende dieren.
+        # >3kHz typisch piepband (muis), 1.8–3kHz vaker eekhoorn.
         if centroid_hz > 3000:
             return self._MAPPING[80]
         if centroid_hz > 1800:
@@ -194,7 +195,7 @@ class YAMNetClassifier(BaseClassifier):
         return self._MAPPING[81]
 
     def _wild_animals_fallback(self, audio_16k: np.ndarray) -> tuple[str, str, str, int]:
-        rms = float(np.sqrt(np.mean(np.square(audio_16k.astype(np.float64)))))
+        rms = float(np.sqrt(np.mean(audio_16k ** 2)))
         hour = datetime.now(tz=timezone.utc).hour
         is_night = hour < 6 or hour >= 20
         # Bij genormaliseerde audio (~[-1, 1]) is RMS > 0.08 vaak een luidere roep.

@@ -64,7 +64,7 @@ class ClipSaver:
     ) -> None:
         self.enabled = enabled
         self.save_uncertain = save_uncertain
-        self.uncertain_threshold = float(uncertain_threshold)
+        self.uncertain_threshold = float(np.clip(float(uncertain_threshold), 0.0, 1.0))
         self.max_clips_per_day = int(max_clips_per_day)
         self.clips_dir = Path(clips_dir)
         self.confirmed_dir = self.clips_dir / "confirmed"
@@ -131,7 +131,7 @@ class ClipSaver:
             "tier": int(payload.get("tier", 3)),
             "model_version": payload.get("model_version", ""),
             "duration_s": float(payload.get("duration_s", len(samples) / sr if sr > 0 else 0.0)),
-            "rms": float(payload.get("rms", np.sqrt(np.mean(samples.astype(np.float64) ** 2)))),
+            "rms": float(payload.get("rms", 0.0)),
         }
         with open(self.index_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(metadata, ensure_ascii=False) + "\n")
