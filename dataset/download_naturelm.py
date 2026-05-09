@@ -1,11 +1,18 @@
 """
 Download zoogdiergeluiden via NatureLM dataset (Earth Species Project) van Hugging Face.
+
+Strategie:
+  1. Download alleen de metadata-kolommen via Parquet (geen audio) → razendsnel filteren
+  2. Haal alleen audio op voor de rijen die matchen met doelsoorten
+  3. Sla op als WAV via soundfile (geen torchcodec nodig)
+
 Gebruik: python dataset/download_naturelm.py --output dataset/raw --species-file dataset/species_targets.yaml
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
 import sys
@@ -13,6 +20,18 @@ import wave
 from pathlib import Path
 
 import yaml
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
+try:
+    import soundfile as sf
+    HAS_SOUNDFILE = True
+except ImportError:
+    HAS_SOUNDFILE = False
 
 try:
     from datasets import load_dataset
@@ -26,17 +45,12 @@ try:
 except ImportError:
     HAS_TQDM = False
 
-# Primaire dataset: NatureLM-audio van Earth Species Project
+# Primaire dataset
 NATURELM_DATASET = "EarthSpeciesProject/NatureLM-audio-training"
-# Bekende kolomnamen voor soortnaam (directe kolommen)
-SPECIES_COLUMNS = ["scientific_name", "species", "label", "common_name"]
-# Sleutels binnen een 'metadata' dict kolom
-METADATA_SPECIES_KEYS = ["scientific_name", "species", "Scientific Name", "Species"]
 SAMPLE_RATE = 16000  # Hz — standaard voor YAMNet
 
 
 def _slug(scientific: str) -> str:
-    """Zet wetenschappelijke naam om naar bestandsvriendelijke slug."""
     return re.sub(r"\s+", "_", scientific.strip().lower())
 
 
@@ -47,70 +61,74 @@ def _load_species(yaml_path: Path) -> list[dict]:
 
 
 def _scientific_names(species_list: list[dict]) -> set[str]:
-    """Geef set van wetenschappelijke namen terug (lowercase voor vergelijking)."""
     return {s["scientific"].lower() for s in species_list}
 
 
-def _extract_species_from_sample(sample: dict) -> str:
+def _extract_species_from_output(output: str) -> str:
     """
-    Haal soortnaam op uit een sample.
-    Probeert directe kolommen, daarna metadata dict, daarna laatste 2 woorden van output kolom.
-
     NatureLM output kolom bevat volledige taxonomie, bijv.:
-    'Chordata Aves Passeriformes Passerellidae Atlapetes fuscoolivaceus'
+    'Chordata Mammalia Carnivora Canidae Vulpes vulpes'
     De soortnaam zijn altijd de laatste 2 woorden (genus + soort).
     """
-    # 1. Directe kolommen
-    for col in SPECIES_COLUMNS:
-        val = sample.get(col)
-        if val and isinstance(val, str):
-            return val.strip()
-
-    # 2. metadata kolom (kan dict of JSON-string zijn)
-    meta = sample.get("metadata")
-    if meta:
-        if isinstance(meta, str):
-            try:
-                meta = json.loads(meta)
-            except Exception:
-                meta = {}
-        if isinstance(meta, dict):
-            for key in METADATA_SPECIES_KEYS:
-                val = meta.get(key)
-                if val and isinstance(val, str):
-                    return val.strip()
-
-    # 3. output kolom: laatste 2 woorden = genus + soort
-    output = sample.get("output", "")
-    if output and isinstance(output, str):
-        words = output.strip().split()
-        if len(words) >= 2:
-            return " ".join(words[-2:])  # bijv. 'Atlapetes fuscoolivaceus'
-
-    return ""
+    if not output:
+        return ""
+    words = output.strip().split()
+    if len(words) >= 2:
+        return " ".join(words[-2:])
+    return output.strip()
 
 
-def _save_audio_as_wav(audio_data: dict | list, dest: Path, sample_rate: int = SAMPLE_RATE) -> None:
-    """Sla audio op als WAV-bestand (16kHz mono)."""
-    import struct
-
-    if isinstance(audio_data, dict):
-        samples = audio_data.get("array", [])
-        sr = audio_data.get("sampling_rate", sample_rate)
-    else:
-        samples = audio_data
-        sr = sample_rate
-
-    # Converteer naar 16-bit PCM
-    pcm = [max(-32768, min(32767, int(s * 32767))) for s in samples]
-    raw = struct.pack(f"<{len(pcm)}h", *pcm)
-
+def _save_audio_as_wav(audio_data, dest: Path, sample_rate: int = SAMPLE_RATE) -> bool:
+    """
+    Sla audio op als WAV. Ondersteunt:
+    - dict met 'array' + 'sampling_rate' (HuggingFace Audio object)
+    - bytes (ruwe audio bytes → soundfile decode)
+    - numpy array
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(dest), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sr)
-        wf.writeframes(raw)
+
+    try:
+        # HuggingFace Audio object: dict met array
+        if isinstance(audio_data, dict):
+            array = audio_data.get("array")
+            sr = audio_data.get("sampling_rate", sample_rate)
+            if array is not None and HAS_SOUNDFILE:
+                if not isinstance(array, (list,)) and HAS_NUMPY:
+                    array = np.array(array, dtype=np.float32)
+                sf.write(str(dest), array, sr, subtype="PCM_16")
+                return True
+
+        # Ruwe bytes → soundfile decode
+        if isinstance(audio_data, (bytes, bytearray)) and HAS_SOUNDFILE:
+            buf = io.BytesIO(audio_data)
+            array, sr = sf.read(buf, dtype="float32", always_2d=False)
+            sf.write(str(dest), array, sr, subtype="PCM_16")
+            return True
+
+        # Fallback: lijst/array direct als PCM
+        import struct
+        if isinstance(audio_data, dict):
+            samples = audio_data.get("array", [])
+            sr = audio_data.get("sampling_rate", sample_rate)
+        else:
+            samples = list(audio_data) if audio_data else []
+            sr = sample_rate
+
+        if not samples:
+            return False
+
+        pcm = [max(-32768, min(32767, int(float(s) * 32767))) for s in samples]
+        raw = struct.pack(f"<{len(pcm)}h", *pcm)
+        with wave.open(str(dest), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(raw)
+        return True
+
+    except Exception as exc:
+        print(f"\n  ⚠ Audio opslaan mislukt: {exc}", file=sys.stderr)
+        return False
 
 
 def _save_metadata(records: list[dict], dest: Path) -> None:
@@ -120,17 +138,70 @@ def _save_metadata(records: list[dict], dest: Path) -> None:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def _print_sample_debug(sample: dict, extracted_name: str) -> None:
-    """Print eerste sample voor debugging van dataset-schema."""
-    print("\n🔍 Eerste sample (schema debug):")
-    for k, v in sample.items():
-        if k == "audio":
-            print(f"  {k}: <audio data>")
-        elif isinstance(v, str) and len(v) > 120:
-            print(f"  {k}: {v[:120]}...")
-        else:
-            print(f"  {k}: {v!r}")
-    print(f"\n  → Geëxtraheerde soortnaam: '{extracted_name}'\n")
+def _build_index(target_names: set[str], debug: bool) -> dict[str, list[str]]:
+    """
+    Stap 1: Download alleen tekst-kolommen via Parquet (geen audio).
+    Bouw een index: {slug: [id1, id2, ...]} van matching rijen.
+    Veel sneller dan audio streamen!
+    """
+    print("📋 Stap 1: Index bouwen via Parquet (geen audio download)...")
+
+    try:
+        # Laad dataset zonder audio te decoderen
+        ds_meta = load_dataset(
+            NATURELM_DATASET,
+            split="train",
+            streaming=True,
+        )
+        # Verwijder audio kolom uit decoding om alleen metadata te lezen
+        if "audio" in ds_meta.features:
+            from datasets import Audio
+            ds_meta = ds_meta.cast_column("audio", Audio(decode=False))
+    except Exception as exc:
+        print(f"⚠ Index bouwen mislukt: {exc}", file=sys.stderr)
+        return {}
+
+    index: dict[str, list[str]] = {slug: [] for slug in [_slug(n) for n in target_names]}
+    # slug → scientific mapping
+    slug_to_scientific: dict[str, str] = {}
+
+    total_scanned = 0
+    total_found = 0
+
+    iterator = tqdm(ds_meta, desc="Index scannen", unit=" samples") if HAS_TQDM else ds_meta
+
+    for sample in iterator:
+        total_scanned += 1
+        output = sample.get("output", "")
+        task = sample.get("task", "")
+
+        # Snel pre-filter: alleen taxonomic-classification samples
+        if task and "taxonomic" not in task:
+            continue
+
+        species_name = _extract_species_from_output(output).lower()
+        if not species_name:
+            continue
+
+        if species_name in target_names:
+            slug = _slug(species_name)
+            sample_id = sample.get("id", "")
+            if sample_id and sample_id not in index.get(slug, []):
+                if slug not in index:
+                    index[slug] = []
+                index[slug].append(sample_id)
+                slug_to_scientific[slug] = species_name
+                total_found += 1
+
+                if debug:
+                    print(f"  ✓ Match: {species_name} → {sample_id}")
+
+    print(f"\n  Index klaar: {total_scanned} gescand, {total_found} matches gevonden")
+    for slug, ids in index.items():
+        if ids:
+            print(f"  {slug}: {len(ids)} opnames")
+
+    return index
 
 
 def download_from_naturelm(
@@ -140,91 +211,84 @@ def download_from_naturelm(
     debug: bool = False,
 ) -> dict[str, int]:
     """
-    Stream de NatureLM dataset en sla audio op per doelsoort.
-    Geeft dict terug met {slug: aantal_downloads}.
+    Stap 1: Bouw index via Parquet (alleen tekst, geen audio).
+    Stap 2: Download audio alleen voor matching IDs.
     """
     if not HAS_DATASETS:
-        print(
-            "⚠ 'datasets' library niet gevonden. Installeer met: pip install datasets>=2.14",
-            file=sys.stderr,
-        )
+        print("⚠ 'datasets' niet gevonden. pip install datasets", file=sys.stderr)
         sys.exit(1)
 
     target_names = _scientific_names(species_list)
     species_by_name = {s["scientific"].lower(): s for s in species_list}
-
     counters: dict[str, int] = {_slug(s["scientific"]): 0 for s in species_list}
     metadata_buffers: dict[str, list[dict]] = {_slug(s["scientific"]): [] for s in species_list}
 
-    print(f"📡 Verbinden met dataset: {NATURELM_DATASET} ...")
+    # === STAP 1: Index bouwen ===
+    index = _build_index(target_names, debug)
+
+    total_matches = sum(len(v) for v in index.values())
+    if total_matches == 0:
+        print("\n⚠ Geen matches gevonden in index. Controleer species_targets.yaml.", file=sys.stderr)
+        return counters
+
+    # Maak set van gewenste IDs (beperkt tot max_per_species)
+    wanted_ids: dict[str, str] = {}  # id → slug
+    for slug, ids in index.items():
+        for sample_id in ids[:max_per_species]:
+            wanted_ids[sample_id] = slug
+
+    print(f"\n📡 Stap 2: Audio downloaden voor {len(wanted_ids)} opnames...")
+
+    # === STAP 2: Audio ophalen voor matching IDs ===
     try:
-        ds = load_dataset(NATURELM_DATASET, split="train", streaming=True)
+        ds_audio = load_dataset(NATURELM_DATASET, split="train", streaming=True)
     except Exception as exc:
-        print(f"⚠ Dataset kon niet geladen worden: {exc}", file=sys.stderr)
-        print("  Controleer of je internettoegang hebt en de dataset beschikbaar is.", file=sys.stderr)
+        print(f"⚠ Dataset laden mislukt: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"  Beschikbare kolommen: {list(ds.features.keys())}")
-    print(f"  Zoek naar {len(species_list)} soort(en), max {max_per_species} per soort")
-    print(f"  Doelsoorten: {sorted(target_names)}\n")
-
-    all_done = False
-    processed = 0
-    first_sample_shown = False
-
-    iterator = tqdm(ds, desc="Streamen", unit=" samples") if HAS_TQDM else ds
+    remaining = set(wanted_ids.keys())
+    iterator = tqdm(ds_audio, desc="Audio ophalen", unit=" samples") if HAS_TQDM else ds_audio
 
     for sample in iterator:
-        if all_done:
+        if not remaining:
             break
 
-        name_raw = _extract_species_from_sample(sample)
-        name_lower = name_raw.lower().strip()
-
-        # Toon eerste sample voor debug (na extractie zodat naam zichtbaar is)
-        if not first_sample_shown and debug:
-            _print_sample_debug(sample, name_lower)
-            first_sample_shown = True
-
-        if not name_lower or name_lower not in target_names:
+        sample_id = sample.get("id", "")
+        if sample_id not in remaining:
             continue
 
-        species_info = species_by_name[name_lower]
-        slug = _slug(species_info["scientific"])
+        remaining.discard(sample_id)
+        slug = wanted_ids[sample_id]
 
         if counters[slug] >= max_per_species:
-            if all(counters[s] >= max_per_species for s in counters):
-                all_done = True
             continue
 
-        sample_id = sample.get("id", sample.get("audio_id", f"nlm_{processed}_{slug}"))
-        dest = output_dir / slug / f"{sample_id}.wav"
+        # Zoek species info
+        output = sample.get("output", "")
+        species_name = _extract_species_from_output(output).lower()
+        species_info = species_by_name.get(species_name, {})
 
+        dest = output_dir / slug / f"{sample_id}.wav"
         if dest.exists():
             counters[slug] += 1
-            processed += 1
-        else:
-            audio = sample.get("audio", sample.get("audio_array", []))
-            if not audio:
-                continue
-            try:
-                sr = SAMPLE_RATE
-                if isinstance(audio, dict):
-                    sr = audio.get("sampling_rate", SAMPLE_RATE)
-                _save_audio_as_wav(audio, dest, sr)
-                counters[slug] += 1
-                processed += 1
+            continue
 
-                meta = {k: v for k, v in sample.items() if k != "audio" and k != "audio_array"}
-                meta["source"] = NATURELM_DATASET
-                meta["local_file"] = str(dest)
-                metadata_buffers[slug].append(meta)
+        audio = sample.get("audio")
+        if not audio:
+            continue
 
-                if debug:
-                    print(f"  ✓ Opgeslagen: {species_info['nl']} → {dest.name}")
-            except Exception as exc:
-                print(f"\n  ⚠ Opslaan mislukt ({dest.name}): {exc}", file=sys.stderr)
+        if _save_audio_as_wav(audio, dest):
+            counters[slug] += 1
+            meta = {k: v for k, v in sample.items() if k not in ("audio", "audio_array")}
+            meta["source"] = NATURELM_DATASET
+            meta["local_file"] = str(dest)
+            metadata_buffers[slug].append(meta)
 
+            if debug and species_info:
+                nl = species_info.get("nl", slug)
+                print(f"  ✓ {nl}: {dest.name}")
+
+    # Sla metadata op
     for species_info in species_list:
         slug = _slug(species_info["scientific"])
         meta_list = metadata_buffers[slug]
@@ -237,32 +301,11 @@ def download_from_naturelm(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output",
-        default="dataset/raw",
-        help="Uitvoermap voor ruwe downloads (standaard: dataset/raw)",
-    )
-    parser.add_argument(
-        "--max-per-species",
-        type=int,
-        default=50,
-        help="Maximum aantal opnames per soort (standaard: 50)",
-    )
-    parser.add_argument(
-        "--species-file",
-        default="dataset/species_targets.yaml",
-        help="Pad naar species_targets.yaml",
-    )
-    parser.add_argument(
-        "--dataset",
-        default=NATURELM_DATASET,
-        help=f"HuggingFace dataset naam (standaard: {NATURELM_DATASET})",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Toon eerste sample + gevonden matches voor schema-debugging",
-    )
+    parser.add_argument("--output", default="dataset/raw")
+    parser.add_argument("--max-per-species", type=int, default=50)
+    parser.add_argument("--species-file", default="dataset/species_targets.yaml")
+    parser.add_argument("--dataset", default=NATURELM_DATASET)
+    parser.add_argument("--debug", action="store_true", help="Toon matches tijdens scannen")
     args = parser.parse_args()
 
     output_dir = Path(args.output)
@@ -270,6 +313,10 @@ def main() -> None:
 
     if not species_file.exists():
         print(f"Bestand niet gevonden: {species_file}", file=sys.stderr)
+        sys.exit(1)
+
+    if not HAS_SOUNDFILE:
+        print("⚠ soundfile niet gevonden. pip install soundfile", file=sys.stderr)
         sys.exit(1)
 
     species_list = _load_species(species_file)
