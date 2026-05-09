@@ -28,8 +28,10 @@ except ImportError:
 
 # Primaire dataset: NatureLM-audio van Earth Species Project
 NATURELM_DATASET = "EarthSpeciesProject/NatureLM-audio-training"
-# Kolommen die de wetenschappelijke naam bevatten (afhankelijk van dataset-schema)
+# Bekende kolomnamen voor soortnaam (directe kolommen)
 SPECIES_COLUMNS = ["scientific_name", "species", "label", "common_name"]
+# Sleutels binnen een 'metadata' dict kolom
+METADATA_SPECIES_KEYS = ["scientific_name", "species", "Scientific Name", "Species"]
 SAMPLE_RATE = 16000  # Hz — standaard voor YAMNet
 
 
@@ -57,12 +59,37 @@ def _find_species_column(features: dict) -> str | None:
     return None
 
 
-def _get_species_name(sample: dict, col: str) -> str:
-    """Haal de soortnaam op uit een sample (kan string of dict zijn)."""
-    value = sample.get(col, "")
-    if isinstance(value, dict):
-        return value.get("scientific_name", value.get("name", ""))
-    return str(value)
+def _extract_species_from_sample(sample: dict) -> str:
+    """
+    Haal soortnaam op uit een sample.
+    Probeert directe kolommen, daarna metadata dict, daarna instruction_text.
+    """
+    # 1. Directe kolommen
+    for col in SPECIES_COLUMNS:
+        val = sample.get(col)
+        if val and isinstance(val, str):
+            return val.strip()
+
+    # 2. metadata kolom (kan dict of JSON-string zijn)
+    meta = sample.get("metadata")
+    if meta:
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        if isinstance(meta, dict):
+            for key in METADATA_SPECIES_KEYS:
+                val = meta.get(key)
+                if val and isinstance(val, str):
+                    return val.strip()
+
+    # 3. output kolom (NatureLM gebruikt dit als beschrijving/label)
+    output = sample.get("output", "")
+    if output and isinstance(output, str):
+        return output.strip()
+
+    return ""
 
 
 def _save_audio_as_wav(audio_data: dict | list, dest: Path, sample_rate: int = SAMPLE_RATE) -> None:
@@ -95,10 +122,24 @@ def _save_metadata(records: list[dict], dest: Path) -> None:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+def _print_sample_debug(sample: dict) -> None:
+    """Print eerste sample voor debugging van dataset-schema."""
+    print("\n🔍 Eerste sample (schema debug):")
+    for k, v in sample.items():
+        if k == "audio":
+            print(f"  {k}: <audio data>")
+        elif isinstance(v, str) and len(v) > 100:
+            print(f"  {k}: {v[:100]}...")
+        else:
+            print(f"  {k}: {v!r}")
+    print()
+
+
 def download_from_naturelm(
     species_list: list[dict],
     output_dir: Path,
     max_per_species: int,
+    debug: bool = False,
 ) -> dict[str, int]:
     """
     Stream de NatureLM dataset en sla audio op per doelsoort.
@@ -125,25 +166,12 @@ def download_from_naturelm(
         print("  Controleer of je internettoegang hebt en de dataset beschikbaar is.", file=sys.stderr)
         sys.exit(1)
 
-    species_col = _find_species_column(ds.features)
-    if species_col is None:
-        try:
-            first = next(iter(ds))
-            available = list(first.keys())
-        except StopIteration:
-            available = []
-        print(
-            f"⚠ Geen soortnaam-kolom gevonden. Beschikbare kolommen: {available}",
-            file=sys.stderr,
-        )
-        print(f"  Verwachte kolommen: {SPECIES_COLUMNS}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"  Soortnaam-kolom: '{species_col}'")
+    print(f"  Beschikbare kolommen: {list(ds.features.keys())}")
     print(f"  Zoek naar {len(species_list)} soort(en), max {max_per_species} per soort\n")
 
     all_done = False
     processed = 0
+    first_sample_shown = False
 
     iterator = tqdm(ds, desc="Streamen", unit=" samples") if HAS_TQDM else ds
 
@@ -151,10 +179,15 @@ def download_from_naturelm(
         if all_done:
             break
 
-        name_raw = _get_species_name(sample, species_col)
+        # Toon eerste sample voor debug
+        if not first_sample_shown and debug:
+            _print_sample_debug(sample)
+            first_sample_shown = True
+
+        name_raw = _extract_species_from_sample(sample)
         name_lower = name_raw.lower().strip()
 
-        if name_lower not in target_names:
+        if not name_lower or name_lower not in target_names:
             continue
 
         species_info = species_by_name[name_lower]
@@ -223,6 +256,11 @@ def main() -> None:
         default=NATURELM_DATASET,
         help=f"HuggingFace dataset naam (standaard: {NATURELM_DATASET})",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Toon eerste sample voor schema-debugging",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output)
@@ -239,7 +277,7 @@ def main() -> None:
     print(f"Dataset: {args.dataset}")
     print(f"Uitvoer: {output_dir.resolve()}\n")
 
-    counters = download_from_naturelm(species_list, output_dir, args.max_per_species)
+    counters = download_from_naturelm(species_list, output_dir, args.max_per_species, debug=args.debug)
 
     print("\n📊 Resultaat:")
     total = 0
