@@ -1,0 +1,18 @@
+[Unit]
+Description=Mammal Watcher Docker Stack
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/natuurwaarnemer/mammal-watcher
+ExecStart=/home/natuurwaarnemer/mammal-watcher/startup.sh
+ExecStop=/usr/bin/docker compose -f /home/natuurwaarnemer/mammal-watcher/docker-compose.yml down
+User=natuurwaarnemer
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
