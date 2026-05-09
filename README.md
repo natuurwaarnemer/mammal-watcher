@@ -97,6 +97,33 @@ om te controleren of de pipeline werkt zonder echte hardware.
 
 ---
 
+## 🔄 Automatisch opstarten na reboot
+
+Na een herinstallatie of reboot moet de stack automatisch starten.
+
+### Eenmalige setup:
+
+```bash
+# 1. .env aanmaken (eenmalig, wordt daarna bewaard)
+cp .env.example .env
+# Pas ESP32_RTSP_URL aan naar jouw ESP32 IP als dat anders is
+
+# 2. startup.sh uitvoerbaar maken
+chmod +x startup.sh
+
+# 3. Systemd service installeren
+sudo cp systemd/mammal-watcher.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable mammal-watcher.service
+sudo systemctl start mammal-watcher.service
+
+# 4. Controleren
+sudo systemctl status mammal-watcher.service
+docker compose ps
+```
+
+---
+
 ## Probleemoplossing
 
 ### ESP32 weigert verbinding / rtsp-bridge crash-loops
