@@ -27,6 +27,11 @@ env/
 data/
 models/
 
+# Dataset pipeline (ruwe downloads, verwerkte audio, features)
+dataset/raw/
+dataset/prepared/
+dataset/features/
+
 # Pytest
 .pytest_cache/
 .coverage
