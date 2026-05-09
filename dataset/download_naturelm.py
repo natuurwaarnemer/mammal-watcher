@@ -2,7 +2,7 @@
 Download zoogdiergeluiden via NatureLM dataset (Earth Species Project) van Hugging Face.
 
 Strategie:
-  1. DuckDB query op HuggingFace Parquet via datasets-server API → index in seconden
+  1. ÉÉN DuckDB query voor alle soorten tegelijk op HuggingFace Parquet → index in minuten
   2. Download alleen audio voor matching IDs via HuggingFace datasets streaming
   3. Sla op als WAV via soundfile
 
@@ -53,13 +53,10 @@ except ImportError:
     HAS_TQDM = False
 
 NATURELM_DATASET = "EarthSpeciesProject/NatureLM-audio-training"
-
-# HuggingFace Datasets Server API — geeft echte Parquet CDN URLs terug
 HF_DATASETS_SERVER = (
     "https://datasets-server.huggingface.co/parquet"
     "?dataset=EarthSpeciesProject%2FNatureLM-audio-training"
 )
-
 SAMPLE_RATE = 16000
 
 
@@ -88,10 +85,7 @@ def _extract_species_from_output(output: str) -> str:
 
 
 def _get_parquet_urls() -> list[str]:
-    """
-    Haal Parquet CDN URLs op via HuggingFace Datasets Server API.
-    Retourneert lijst van HTTPS URLs die DuckDB direct kan lezen.
-    """
+    """Haal Parquet CDN URLs op via HuggingFace Datasets Server API."""
     try:
         req = urllib.request.Request(
             HF_DATASETS_SERVER,
@@ -99,17 +93,12 @@ def _get_parquet_urls() -> list[str]:
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
-
-        # Datasets Server geeft {"parquet_files": [{url, filename, split, ...}, ...]}
         urls = []
-        parquet_files = data.get("parquet_files", [])
-        for f in parquet_files:
+        for f in data.get("parquet_files", []):
             url = f.get("url")
             if url:
                 urls.append(url)
-
         return urls
-
     except Exception as exc:
         print(f"  ⚠ Parquet URLs ophalen mislukt: {exc}", file=sys.stderr)
         return []
@@ -117,8 +106,8 @@ def _get_parquet_urls() -> list[str]:
 
 def _build_index_duckdb(species_list: list[dict], max_per_species: int, debug: bool) -> dict[str, list[str]]:
     """
-    Stap 1: DuckDB query op HuggingFace Parquet CDN URLs.
-    Razendsnel — geen audio, alleen tekst kolommen.
+    ÉÉN DuckDB query voor alle soorten tegelijk.
+    Scant de Parquet bestanden slechts één keer → veel sneller!
     """
     print("🦆 Stap 1: DuckDB index bouwen via HuggingFace Parquet...")
 
@@ -134,6 +123,18 @@ def _build_index_duckdb(species_list: list[dict], max_per_species: int, debug: b
 
     url_list = ", ".join(f"'{u}'" for u in urls)
 
+    # Bouw één OR-conditie voor alle soorten
+    conditions = []
+    for s in species_list:
+        parts = s["scientific"].split(" ", 1)
+        genus = parts[0]
+        soort = parts[1] if len(parts) > 1 else ""
+        # Escape single quotes
+        like = f"%{genus} {soort}%".replace("'", "''")
+        conditions.append(f"output LIKE '{like}'")
+
+    where_clause = " OR ".join(conditions)
+
     con = duckdb.connect()
     try:
         con.execute("INSTALL httpfs; LOAD httpfs;")
@@ -141,36 +142,34 @@ def _build_index_duckdb(species_list: list[dict], max_per_species: int, debug: b
     except Exception:
         pass
 
-    index: dict[str, list[str]] = {}
-
-    for species_info in species_list:
-        scientific = species_info["scientific"]
-        slug = _slug(scientific)
-        nl = species_info["nl"]
-        parts = scientific.split(" ", 1)
-        genus = parts[0]
-        soort = parts[1] if len(parts) > 1 else ""
-        like_pattern = f"%{genus} {soort}%"
-
-        print(f"  Zoeken: {nl} ({scientific})...", end=" ", flush=True)
-        try:
-            result = con.execute(f"""
-                SELECT id
-                FROM read_parquet([{url_list}])
-                WHERE task = 'taxonomic-classification'
-                  AND output LIKE '{like_pattern}'
-                LIMIT {max_per_species}
-            """).fetchall()
-
-            ids = [row[0] for row in result if row[0]]
-            index[slug] = ids
-            print(f"{len(ids)} gevonden ✓")
-
-        except Exception as exc:
-            print(f"mislukt ({exc})")
-            index[slug] = []
+    print("  Scannen (één query voor alle soorten)...", end=" ", flush=True)
+    try:
+        result = con.execute(f"""
+            SELECT id, output
+            FROM read_parquet([{url_list}])
+            WHERE task = 'taxonomic-classification'
+              AND ({where_clause})
+        """).fetchall()
+        print(f"{len(result)} rijen gevonden ✓")
+    except Exception as exc:
+        print(f"mislukt ({exc})")
+        con.close()
+        return {}
 
     con.close()
+
+    # Verdeel resultaten per soort
+    index: dict[str, list[str]] = {_slug(s["scientific"]): [] for s in species_list}
+    slug_by_scientific = {s["scientific"].lower(): _slug(s["scientific"]) for s in species_list}
+
+    for row_id, output in result:
+        if not row_id or not output:
+            continue
+        species_name = _extract_species_from_output(output).lower()
+        slug = slug_by_scientific.get(species_name)
+        if slug and len(index[slug]) < max_per_species:
+            index[slug].append(row_id)
+
     return index
 
 
