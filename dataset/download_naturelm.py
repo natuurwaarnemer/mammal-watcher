@@ -51,18 +51,14 @@ def _scientific_names(species_list: list[dict]) -> set[str]:
     return {s["scientific"].lower() for s in species_list}
 
 
-def _find_species_column(features: dict) -> str | None:
-    """Zoek de kolom met de wetenschappelijke naam in het dataset-schema."""
-    for col in SPECIES_COLUMNS:
-        if col in features:
-            return col
-    return None
-
-
 def _extract_species_from_sample(sample: dict) -> str:
     """
     Haal soortnaam op uit een sample.
-    Probeert directe kolommen, daarna metadata dict, daarna instruction_text.
+    Probeert directe kolommen, daarna metadata dict, daarna laatste 2 woorden van output kolom.
+
+    NatureLM output kolom bevat volledige taxonomie, bijv.:
+    'Chordata Aves Passeriformes Passerellidae Atlapetes fuscoolivaceus'
+    De soortnaam zijn altijd de laatste 2 woorden (genus + soort).
     """
     # 1. Directe kolommen
     for col in SPECIES_COLUMNS:
@@ -84,10 +80,12 @@ def _extract_species_from_sample(sample: dict) -> str:
                 if val and isinstance(val, str):
                     return val.strip()
 
-    # 3. output kolom (NatureLM gebruikt dit als beschrijving/label)
+    # 3. output kolom: laatste 2 woorden = genus + soort
     output = sample.get("output", "")
     if output and isinstance(output, str):
-        return output.strip()
+        words = output.strip().split()
+        if len(words) >= 2:
+            return " ".join(words[-2:])  # bijv. 'Atlapetes fuscoolivaceus'
 
     return ""
 
@@ -122,17 +120,17 @@ def _save_metadata(records: list[dict], dest: Path) -> None:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def _print_sample_debug(sample: dict) -> None:
+def _print_sample_debug(sample: dict, extracted_name: str) -> None:
     """Print eerste sample voor debugging van dataset-schema."""
     print("\n🔍 Eerste sample (schema debug):")
     for k, v in sample.items():
         if k == "audio":
             print(f"  {k}: <audio data>")
-        elif isinstance(v, str) and len(v) > 100:
-            print(f"  {k}: {v[:100]}...")
+        elif isinstance(v, str) and len(v) > 120:
+            print(f"  {k}: {v[:120]}...")
         else:
             print(f"  {k}: {v!r}")
-    print()
+    print(f"\n  → Geëxtraheerde soortnaam: '{extracted_name}'\n")
 
 
 def download_from_naturelm(
@@ -167,7 +165,8 @@ def download_from_naturelm(
         sys.exit(1)
 
     print(f"  Beschikbare kolommen: {list(ds.features.keys())}")
-    print(f"  Zoek naar {len(species_list)} soort(en), max {max_per_species} per soort\n")
+    print(f"  Zoek naar {len(species_list)} soort(en), max {max_per_species} per soort")
+    print(f"  Doelsoorten: {sorted(target_names)}\n")
 
     all_done = False
     processed = 0
@@ -179,13 +178,13 @@ def download_from_naturelm(
         if all_done:
             break
 
-        # Toon eerste sample voor debug
-        if not first_sample_shown and debug:
-            _print_sample_debug(sample)
-            first_sample_shown = True
-
         name_raw = _extract_species_from_sample(sample)
         name_lower = name_raw.lower().strip()
+
+        # Toon eerste sample voor debug (na extractie zodat naam zichtbaar is)
+        if not first_sample_shown and debug:
+            _print_sample_debug(sample, name_lower)
+            first_sample_shown = True
 
         if not name_lower or name_lower not in target_names:
             continue
@@ -220,6 +219,9 @@ def download_from_naturelm(
                 meta["source"] = NATURELM_DATASET
                 meta["local_file"] = str(dest)
                 metadata_buffers[slug].append(meta)
+
+                if debug:
+                    print(f"  ✓ Opgeslagen: {species_info['nl']} → {dest.name}")
             except Exception as exc:
                 print(f"\n  ⚠ Opslaan mislukt ({dest.name}): {exc}", file=sys.stderr)
 
@@ -259,7 +261,7 @@ def main() -> None:
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Toon eerste sample voor schema-debugging",
+        help="Toon eerste sample + gevonden matches voor schema-debugging",
     )
     args = parser.parse_args()
 
