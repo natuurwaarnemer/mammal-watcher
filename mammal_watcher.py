@@ -64,7 +64,7 @@ class ClipSaver:
     ) -> None:
         self.enabled = enabled
         self.save_uncertain = save_uncertain
-        self.uncertain_threshold = float(np.clip(float(uncertain_threshold), 0.0, 1.0))
+        self.uncertain_threshold = float(np.clip(uncertain_threshold, 0.0, 1.0))
         self.max_clips_per_day = int(max_clips_per_day)
         self.clips_dir = Path(clips_dir)
         self.confirmed_dir = self.clips_dir / "confirmed"
@@ -76,6 +76,7 @@ class ClipSaver:
             self.index_path.touch(exist_ok=True)
 
     def _slug(self, value: str) -> str:
+        """Maak een filesystem-veilige slug van vrije tekst."""
         slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
         return slug or "unknown"
 
@@ -121,6 +122,7 @@ class ClipSaver:
 
         samples = np.asarray(audio, dtype=np.float32).reshape(-1)
         sf.write(str(wav_path), samples, sr, subtype="PCM_16")
+        duration_s = float(payload.get("duration_s", len(samples) / sr if sr > 0 else 0.0))
 
         metadata = {
             "timestamp": timestamp,
@@ -130,7 +132,7 @@ class ClipSaver:
             "confidence": confidence,
             "tier": int(payload.get("tier", 3)),
             "model_version": payload.get("model_version", ""),
-            "duration_s": float(payload.get("duration_s", len(samples) / sr if sr > 0 else 0.0)),
+            "duration_s": duration_s,
             "rms": float(payload.get("rms", 0.0)),
         }
         with open(self.index_path, "a", encoding="utf-8") as fh:

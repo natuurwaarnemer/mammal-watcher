@@ -123,7 +123,8 @@ class YAMNetClassifier(BaseClassifier):
     MODEL_URL = "https://tfhub.dev/google/yamnet/1"
     TARGET_SR = 16000
 
-    # Niet-doelklassen uit AudioSet die veel false positives geven in de buitenomgeving.
+    # Niet-doelklassen uit AudioSet-ontology (https://research.google.com/audioset/)
+    # die veel false positives geven in de buitenomgeving.
     _NON_MAMMAL_IGNORE = {0, 400, 494}  # Speech, Rustling leaves, Silence
     _GENERIC_CLASSES = {67, 68, 78}  # Animal, Domestic animals, Wild animals
     _MAPPING: dict[int, tuple[str, str, str, int]] = {
@@ -195,7 +196,7 @@ class YAMNetClassifier(BaseClassifier):
         return self._MAPPING[81]
 
     def _wild_animals_fallback(self, audio_16k: np.ndarray) -> tuple[str, str, str, int]:
-        rms = float(np.sqrt(np.mean(audio_16k ** 2)))
+        rms = float(np.sqrt(np.mean(np.square(audio_16k))))
         hour = datetime.now(tz=timezone.utc).hour
         is_night = hour < 6 or hour >= 20
         # Bij genormaliseerde audio (~[-1, 1]) is RMS > 0.08 vaak een luidere roep.
