@@ -2,8 +2,8 @@
 Download zoogdiergeluiden via NatureLM dataset (Earth Species Project) van Hugging Face.
 
 Strategie:
-  1. ÉÉN DuckDB query voor alle soorten tegelijk op HuggingFace Parquet → index in minuten
-  2. Download alleen audio voor matching IDs via HuggingFace datasets streaming
+  1. Stream dataset ZONDER audio (cast_column Audio decode=False) → snel scannen
+  2. Download alleen audio voor matching IDs via tweede stream pass
   3. Sla op als WAV via soundfile
 
 Gebruik: python dataset/download_naturelm.py --output dataset/raw --species-file dataset/species_targets.yaml
@@ -16,7 +16,6 @@ import io
 import json
 import re
 import sys
-import urllib.request
 import wave
 from pathlib import Path
 
@@ -35,13 +34,7 @@ except ImportError:
     HAS_SOUNDFILE = False
 
 try:
-    import duckdb
-    HAS_DUCKDB = True
-except ImportError:
-    HAS_DUCKDB = False
-
-try:
-    from datasets import load_dataset
+    from datasets import load_dataset, Audio
     HAS_DATASETS = True
 except ImportError:
     HAS_DATASETS = False
@@ -53,10 +46,6 @@ except ImportError:
     HAS_TQDM = False
 
 NATURELM_DATASET = "EarthSpeciesProject/NatureLM-audio-training"
-HF_DATASETS_SERVER = (
-    "https://datasets-server.huggingface.co/parquet"
-    "?dataset=EarthSpeciesProject%2FNatureLM-audio-training"
-)
 SAMPLE_RATE = 16000
 
 
@@ -76,7 +65,7 @@ def _scientific_names(species_list: list[dict]) -> set[str]:
 
 def _extract_species_from_output(output: str) -> str:
     """Laatste 2 woorden van taxonomie = genus + soort."""
-    if not output:
+    if not output or not isinstance(output, str):
         return ""
     words = output.strip().split()
     if len(words) >= 2:
@@ -84,122 +73,51 @@ def _extract_species_from_output(output: str) -> str:
     return output.strip()
 
 
-def _get_parquet_urls() -> list[str]:
-    """Haal Parquet CDN URLs op via HuggingFace Datasets Server API."""
-    try:
-        req = urllib.request.Request(
-            HF_DATASETS_SERVER,
-            headers={"User-Agent": "mammal-watcher/1.0"}
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
-        urls = []
-        for f in data.get("parquet_files", []):
-            url = f.get("url")
-            if url:
-                urls.append(url)
-        return urls
-    except Exception as exc:
-        print(f"  ⚠ Parquet URLs ophalen mislukt: {exc}", file=sys.stderr)
-        return []
-
-
-def _build_index_duckdb(species_list: list[dict], max_per_species: int, debug: bool) -> dict[str, list[str]]:
+def _build_index(species_list: list[dict], max_per_species: int, debug: bool) -> dict[str, list[str]]:
     """
-    ÉÉN DuckDB query voor alle soorten tegelijk.
-    Scant de Parquet bestanden slechts één keer → veel sneller!
+    Stap 1: Stream dataset ZONDER audio te decoderen.
+    Bouwt index {slug: [id, ...]} van alle matching samples.
     """
-    print("🦆 Stap 1: DuckDB index bouwen via HuggingFace Parquet...")
-
-    print("  Parquet URLs ophalen via datasets-server...", end=" ", flush=True)
-    urls = _get_parquet_urls()
-    if not urls:
-        print("mislukt!")
-        return {}
-    print(f"{len(urls)} bestanden gevonden ✓")
-    if debug:
-        for u in urls[:2]:
-            print(f"    {u}")
-
-    url_list = ", ".join(f"'{u}'" for u in urls)
-
-    # Bouw één OR-conditie voor alle soorten
-    conditions = []
-    for s in species_list:
-        parts = s["scientific"].split(" ", 1)
-        genus = parts[0]
-        soort = parts[1] if len(parts) > 1 else ""
-        # Escape single quotes
-        like = f"%{genus} {soort}%".replace("'", "''")
-        conditions.append(f"output LIKE '{like}'")
-
-    where_clause = " OR ".join(conditions)
-
-    con = duckdb.connect()
-    try:
-        con.execute("INSTALL httpfs; LOAD httpfs;")
-        con.execute("SET enable_progress_bar = false;")
-    except Exception:
-        pass
-
-    print("  Scannen (één query voor alle soorten)...", end=" ", flush=True)
-    try:
-        result = con.execute(f"""
-            SELECT id, output
-            FROM read_parquet([{url_list}])
-            WHERE task = 'taxonomic-classification'
-              AND ({where_clause})
-        """).fetchall()
-        print(f"{len(result)} rijen gevonden ✓")
-    except Exception as exc:
-        print(f"mislukt ({exc})")
-        con.close()
-        return {}
-
-    con.close()
-
-    # Verdeel resultaten per soort
-    index: dict[str, list[str]] = {_slug(s["scientific"]): [] for s in species_list}
-    slug_by_scientific = {s["scientific"].lower(): _slug(s["scientific"]) for s in species_list}
-
-    for row_id, output in result:
-        if not row_id or not output:
-            continue
-        species_name = _extract_species_from_output(output).lower()
-        slug = slug_by_scientific.get(species_name)
-        if slug and len(index[slug]) < max_per_species:
-            index[slug].append(row_id)
-
-    return index
-
-
-def _build_index_stream(species_list: list[dict], max_per_species: int, debug: bool) -> dict[str, list[str]]:
-    """Fallback: stream dataset zonder audio decoding."""
-    print("📋 Stap 1: Index bouwen via streaming (fallback)...")
+    print("📋 Stap 1: Index bouwen (geen audio, alleen tekst)...")
     target_names = _scientific_names(species_list)
 
     try:
-        from datasets import Audio
         ds_meta = load_dataset(NATURELM_DATASET, split="train", streaming=True)
+        # Geen audio decoding — alleen tekst kolommen lezen
         ds_meta = ds_meta.cast_column("audio", Audio(decode=False))
     except Exception as exc:
         print(f"⚠ Dataset laden mislukt: {exc}", file=sys.stderr)
-        return {}
+        sys.exit(1)
 
     index: dict[str, list[str]] = {_slug(s["scientific"]): [] for s in species_list}
+
+    # Check of alle soorten al vol zijn
+    def _all_done() -> bool:
+        return all(len(index[_slug(s["scientific"])]) >= max_per_species for s in species_list)
+
     iterator = tqdm(ds_meta, desc="Index scannen", unit=" samples") if HAS_TQDM else ds_meta
 
     for sample in iterator:
-        if "taxonomic" not in sample.get("task", ""):
+        if _all_done():
+            break
+
+        # Veilige task-check: task kan None zijn
+        task = sample.get("task") or ""
+        if "taxonomic" not in task:
             continue
-        species_name = _extract_species_from_output(sample.get("output", "")).lower()
-        if species_name in target_names:
-            slug = _slug(species_name)
-            sample_id = sample.get("id", "")
-            if sample_id and len(index[slug]) < max_per_species:
-                index[slug].append(sample_id)
-                if debug:
-                    print(f"  ✓ {species_name} → {sample_id}")
+
+        output = sample.get("output") or ""
+        species_name = _extract_species_from_output(output).lower()
+
+        if species_name not in target_names:
+            continue
+
+        slug = _slug(species_name)
+        sample_id = sample.get("id") or ""
+        if sample_id and len(index[slug]) < max_per_species:
+            index[slug].append(sample_id)
+            if debug:
+                print(f"  ✓ {species_name} → {sample_id}")
 
     return index
 
@@ -265,15 +183,8 @@ def download_from_naturelm(
     counters: dict[str, int] = {_slug(s["scientific"]): 0 for s in species_list}
     metadata_buffers: dict[str, list[dict]] = {_slug(s["scientific"]): [] for s in species_list}
 
-    # === STAP 1: Index ===
-    if HAS_DUCKDB:
-        index = _build_index_duckdb(species_list, max_per_species, debug)
-        if not index or all(len(v) == 0 for v in index.values()):
-            print("  DuckDB leverde geen resultaten → streaming fallback...")
-            index = _build_index_stream(species_list, max_per_species, debug)
-    else:
-        print("⚠ pip install duckdb voor snellere index.")
-        index = _build_index_stream(species_list, max_per_species, debug)
+    # === STAP 1: Index bouwen (geen audio) ===
+    index = _build_index(species_list, max_per_species, debug)
 
     total_matches = sum(len(v) for v in index.values())
     print(f"\n  Totaal: {total_matches} opnames gevonden")
@@ -283,9 +194,10 @@ def download_from_naturelm(
         print(f"  {'✓' if n > 0 else '✗'} {species_info['nl']:20s}: {n} opnames")
 
     if total_matches == 0:
-        print("\n⚠ Geen matches. Controleer species_targets.yaml.", file=sys.stderr)
+        print("\n⚠ Geen matches gevonden.", file=sys.stderr)
         return counters
 
+    # Maak set van gewenste IDs
     wanted_ids: dict[str, str] = {}
     for slug, ids in index.items():
         for sample_id in ids[:max_per_species]:
@@ -293,6 +205,7 @@ def download_from_naturelm(
 
     print(f"\n📡 Stap 2: Audio downloaden voor {len(wanted_ids)} opnames...")
 
+    # === STAP 2: Audio ophalen (met decoding) ===
     try:
         ds_audio = load_dataset(NATURELM_DATASET, split="train", streaming=True)
     except Exception as exc:
@@ -305,7 +218,7 @@ def download_from_naturelm(
     for sample in iterator:
         if not remaining:
             break
-        sample_id = sample.get("id", "")
+        sample_id = sample.get("id") or ""
         if sample_id not in remaining:
             continue
         remaining.discard(sample_id)
@@ -313,7 +226,7 @@ def download_from_naturelm(
         if counters[slug] >= max_per_species:
             continue
 
-        output = sample.get("output", "")
+        output = sample.get("output") or ""
         species_name = _extract_species_from_output(output).lower()
         species_info = species_by_name.get(species_name, {})
 
@@ -368,8 +281,7 @@ def main() -> None:
 
     print(f"NatureLM downloader — {len(species_list)} soort(en), max {args.max_per_species} per soort")
     print(f"Dataset: {args.dataset}")
-    print(f"Uitvoer: {output_dir.resolve()}")
-    print(f"DuckDB: {'✓' if HAS_DUCKDB else '✗ pip install duckdb'}\n")
+    print(f"Uitvoer: {output_dir.resolve()}\n")
 
     counters = download_from_naturelm(species_list, output_dir, args.max_per_species, debug=args.debug)
 
