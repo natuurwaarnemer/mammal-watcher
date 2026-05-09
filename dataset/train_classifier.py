@@ -30,8 +30,6 @@ def _load_features(features_dir: Path) -> tuple[np.ndarray, np.ndarray, dict[int
         raw_map = json.load(fh)
     species_map = {int(k): v for k, v in raw_map.items()}
 
-    labels = np.load(str(labels_path))
-
     # Bouw X uit per-soort .npy bestanden
     all_X: list[np.ndarray] = []
     all_y: list[int] = []

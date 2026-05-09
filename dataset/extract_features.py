@@ -99,7 +99,7 @@ def main() -> None:
                 print(f"  ⚠ Leesfout ({wav_path.name}): {exc}", file=sys.stderr)
                 continue
             if audio.ndim > 1:
-                audio = audio.mean(axis=1)
+                audio = audio.mean(axis=-1)
             if sr != TARGET_SR:
                 # Bestanden zijn al 16kHz vanuit prepare_dataset.py
                 print(f"  ⚠ Onverwachte sample rate {sr} in {wav_path.name}", file=sys.stderr)
