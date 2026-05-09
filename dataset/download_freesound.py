@@ -125,9 +125,9 @@ def download_species(
 
     for sound in iterator:
         sound_id = sound.get("id", "unknown")
-        # Detecteer extensie op basis van beschikbare preview
+        # Detecteer extensie op basis van beschikbare preview (wav indien mogelijk, anders mp3)
         previews = sound.get("previews", {})
-        ext = "mp3" if previews.get("preview-hq-mp3") else "mp3"
+        ext = "wav" if previews.get("preview-hq-ogg") else "mp3"
         filename = f"fs{sound_id}.{ext}"
         dest = species_dir / filename
 

@@ -68,7 +68,6 @@ def _get_species_name(sample: dict, col: str) -> str:
 
 def _save_audio_as_wav(audio_data: dict | list, dest: Path, sample_rate: int = SAMPLE_RATE) -> None:
     """Sla audio op als WAV-bestand (16kHz mono)."""
-    import array as arr
     import struct
 
     if isinstance(audio_data, dict):
