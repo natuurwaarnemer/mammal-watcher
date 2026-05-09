@@ -123,8 +123,9 @@ class YAMNetClassifier(BaseClassifier):
     MODEL_URL = "https://tfhub.dev/google/yamnet/1"
     TARGET_SR = 16000
 
-    _NON_MAMMAL_IGNORE = {0, 400, 494}
-    _GENERIC_CLASSES = {67, 68, 78}
+    # Niet-doelklassen uit AudioSet die veel false positives geven in de buitenomgeving.
+    _NON_MAMMAL_IGNORE = {0, 400, 494}  # Speech, Rustling leaves, Silence
+    _GENERIC_CLASSES = {67, 68, 78}  # Animal, Domestic animals, Wild animals
     _MAPPING: dict[int, tuple[str, str, str, int]] = {
         67: ("Vulpes vulpes", "vos", "red fox", 3),
         68: ("Canis lupus familiaris", "hond (loslopend)", "domestic dog", 3),
@@ -185,6 +186,7 @@ class YAMNetClassifier(BaseClassifier):
             return self._MAPPING[79]
 
         centroid_hz = float(np.sum(freqs * magnitudes) / denom)
+        # Eenvoudige heuristiek: >3kHz typisch piepband (muis), 1.8–3kHz vaker eekhoorn.
         if centroid_hz > 3000:
             return self._MAPPING[80]
         if centroid_hz > 1800:
@@ -195,6 +197,8 @@ class YAMNetClassifier(BaseClassifier):
         rms = float(np.sqrt(np.mean(np.square(audio_16k.astype(np.float64)))))
         hour = datetime.now(tz=timezone.utc).hour
         is_night = hour < 6 or hour >= 20
+        # Bij genormaliseerde audio (~[-1, 1]) is RMS > 0.08 vaak een luidere roep.
+        # Overdag + luider venster mappen we conservatief op ree, anders vos.
         if rms > 0.08 and not is_night:
             return self._MAPPING[86]
         return self._MAPPING[67]

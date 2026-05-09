@@ -85,7 +85,12 @@ class ClipSaver:
         count = 0
         with open(self.index_path, encoding="utf-8") as fh:
             for line in fh:
-                if f"\"timestamp\": \"{day_prefix}" in line:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                timestamp = str(row.get("timestamp", ""))
+                if timestamp.startswith(day_prefix):
                     count += 1
         return count
 
@@ -105,7 +110,11 @@ class ClipSaver:
             return None
 
         target_dir = self.uncertain_dir if is_uncertain else self.confirmed_dir
-        ts_safe = timestamp.replace(":", "-").replace("+00:00", "Z").replace(".", "-")
+        try:
+            ts_dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            ts_dt = datetime.now(tz=timezone.utc)
+        ts_safe = ts_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
         species_slug = self._slug(str(payload.get("species_nl", "unknown")))
         filename = f"{ts_safe}_{species_slug}_conf{confidence:.2f}.wav"
         wav_path = target_dir / filename
@@ -115,7 +124,7 @@ class ClipSaver:
 
         metadata = {
             "timestamp": timestamp,
-            "filename": str((target_dir.name + "/" + filename)),
+            "filename": str(Path(target_dir.name) / filename),
             "species_scientific": payload.get("species_scientific", ""),
             "species_nl": payload.get("species_nl", ""),
             "confidence": confidence,
@@ -259,8 +268,8 @@ def main() -> None:
             classifier = YAMNetClassifier(
                 min_score=cfg.get("classifier", {}).get("yamnet_min_score", 0.1)
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("YAMNet laden mislukt (%s), gebruik stub fallback", exc)
+        except Exception:  # noqa: BLE001
+            logger.exception("YAMNet laden mislukt, gebruik stub fallback")
             classifier = StubClassifier()
     else:
         logger.warning("Onbekend model '%s', gebruik stub als fallback", model_name)
