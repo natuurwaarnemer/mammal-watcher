@@ -27,7 +27,7 @@ except ImportError:
     HAS_TQDM = False
 
 # Primaire dataset: NatureLM-audio van Earth Species Project
-NATURELM_DATASET = "davidrrobinson/NatureLM-audio"
+NATURELM_DATASET = "EarthSpeciesProject/NatureLM-audio-training"
 # Kolommen die de wetenschappelijke naam bevatten (afhankelijk van dataset-schema)
 SPECIES_COLUMNS = ["scientific_name", "species", "label", "common_name"]
 SAMPLE_RATE = 16000  # Hz — standaard voor YAMNet
@@ -61,7 +61,6 @@ def _get_species_name(sample: dict, col: str) -> str:
     """Haal de soortnaam op uit een sample (kan string of dict zijn)."""
     value = sample.get(col, "")
     if isinstance(value, dict):
-        # Sommige datasets slaan taxonomie op als dict
         return value.get("scientific_name", value.get("name", ""))
     return str(value)
 
@@ -113,25 +112,21 @@ def download_from_naturelm(
         sys.exit(1)
 
     target_names = _scientific_names(species_list)
-    # Bouw mapping: scientific_name_lower → species dict
     species_by_name = {s["scientific"].lower(): s for s in species_list}
 
-    # Tellers en metadata-buffers per soort
     counters: dict[str, int] = {_slug(s["scientific"]): 0 for s in species_list}
     metadata_buffers: dict[str, list[dict]] = {_slug(s["scientific"]): [] for s in species_list}
 
     print(f"📡 Verbinden met dataset: {NATURELM_DATASET} ...")
     try:
-        ds = load_dataset(NATURELM_DATASET, split="train", streaming=True, trust_remote_code=True)
+        ds = load_dataset(NATURELM_DATASET, split="train", streaming=True)
     except Exception as exc:
         print(f"⚠ Dataset kon niet geladen worden: {exc}", file=sys.stderr)
         print("  Controleer of je internettoegang hebt en de dataset beschikbaar is.", file=sys.stderr)
         sys.exit(1)
 
-    # Bepaal welke kolom de soortnaam bevat
     species_col = _find_species_column(ds.features)
     if species_col is None:
-        # Probeer eerste sample om schema te inspecteren
         try:
             first = next(iter(ds))
             available = list(first.keys())
@@ -159,7 +154,6 @@ def download_from_naturelm(
         name_raw = _get_species_name(sample, species_col)
         name_lower = name_raw.lower().strip()
 
-        # Controleer of dit een doelsoort is (exacte wetenschappelijke naam)
         if name_lower not in target_names:
             continue
 
@@ -167,7 +161,6 @@ def download_from_naturelm(
         slug = _slug(species_info["scientific"])
 
         if counters[slug] >= max_per_species:
-            # Check of alle soorten klaar zijn
             if all(counters[s] >= max_per_species for s in counters):
                 all_done = True
             continue
@@ -190,7 +183,6 @@ def download_from_naturelm(
                 counters[slug] += 1
                 processed += 1
 
-                # Bewaar metadata (zonder ruwe audio-array)
                 meta = {k: v for k, v in sample.items() if k != "audio" and k != "audio_array"}
                 meta["source"] = NATURELM_DATASET
                 meta["local_file"] = str(dest)
@@ -198,7 +190,6 @@ def download_from_naturelm(
             except Exception as exc:
                 print(f"\n  ⚠ Opslaan mislukt ({dest.name}): {exc}", file=sys.stderr)
 
-    # Sla metadata op per soort
     for species_info in species_list:
         slug = _slug(species_info["scientific"])
         meta_list = metadata_buffers[slug]
