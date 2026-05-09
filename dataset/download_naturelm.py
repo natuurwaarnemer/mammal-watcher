@@ -2,10 +2,9 @@
 Download zoogdiergeluiden via NatureLM dataset (Earth Species Project) van Hugging Face.
 
 Strategie:
-  1. Haal Parquet URLs op via HuggingFace API
-  2. DuckDB query direct op HTTPS Parquet URLs → index in seconden
-  3. Download alleen audio voor matching IDs via HuggingFace datasets
-  4. Sla op als WAV via soundfile
+  1. DuckDB query op HuggingFace Parquet via datasets-server API → index in seconden
+  2. Download alleen audio voor matching IDs via HuggingFace datasets streaming
+  3. Sla op als WAV via soundfile
 
 Gebruik: python dataset/download_naturelm.py --output dataset/raw --species-file dataset/species_targets.yaml
 """
@@ -54,7 +53,13 @@ except ImportError:
     HAS_TQDM = False
 
 NATURELM_DATASET = "EarthSpeciesProject/NatureLM-audio-training"
-HF_API_PARQUET = "https://huggingface.co/api/datasets/EarthSpeciesProject/NatureLM-audio-training/parquet"
+
+# HuggingFace Datasets Server API — geeft echte Parquet CDN URLs terug
+HF_DATASETS_SERVER = (
+    "https://datasets-server.huggingface.co/parquet"
+    "?dataset=EarthSpeciesProject%2FNatureLM-audio-training"
+)
+
 SAMPLE_RATE = 16000
 
 
@@ -83,37 +88,28 @@ def _extract_species_from_output(output: str) -> str:
 
 
 def _get_parquet_urls() -> list[str]:
-    """Haal de echte Parquet HTTPS URLs op via HuggingFace API."""
+    """
+    Haal Parquet CDN URLs op via HuggingFace Datasets Server API.
+    Retourneert lijst van HTTPS URLs die DuckDB direct kan lezen.
+    """
     try:
         req = urllib.request.Request(
-            HF_API_PARQUET,
+            HF_DATASETS_SERVER,
             headers={"User-Agent": "mammal-watcher/1.0"}
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
 
-        # API geeft {split: [url, ...]} terug
+        # Datasets Server geeft {"parquet_files": [{url, filename, split, ...}, ...]}
         urls = []
-        if isinstance(data, dict):
-            for split, files in data.items():
-                if isinstance(files, list):
-                    for f in files:
-                        if isinstance(f, str):
-                            urls.append(f)
-                        elif isinstance(f, dict):
-                            url = f.get("url") or f.get("filename")
-                            if url:
-                                urls.append(url)
-        elif isinstance(data, list):
-            for item in data:
-                if isinstance(item, str):
-                    urls.append(item)
-                elif isinstance(item, dict):
-                    url = item.get("url") or item.get("filename")
-                    if url:
-                        urls.append(url)
+        parquet_files = data.get("parquet_files", [])
+        for f in parquet_files:
+            url = f.get("url")
+            if url:
+                urls.append(url)
 
         return urls
+
     except Exception as exc:
         print(f"  ⚠ Parquet URLs ophalen mislukt: {exc}", file=sys.stderr)
         return []
@@ -121,26 +117,27 @@ def _get_parquet_urls() -> list[str]:
 
 def _build_index_duckdb(species_list: list[dict], max_per_species: int, debug: bool) -> dict[str, list[str]]:
     """
-    Stap 1: Haal Parquet URLs op → DuckDB query op HTTPS → razendsnel index.
+    Stap 1: DuckDB query op HuggingFace Parquet CDN URLs.
+    Razendsnel — geen audio, alleen tekst kolommen.
     """
     print("🦆 Stap 1: DuckDB index bouwen via HuggingFace Parquet...")
 
-    print("  Parquet URLs ophalen via HuggingFace API...", end=" ", flush=True)
+    print("  Parquet URLs ophalen via datasets-server...", end=" ", flush=True)
     urls = _get_parquet_urls()
     if not urls:
-        print("mislukt! Gebruik streaming fallback.")
+        print("mislukt!")
         return {}
     print(f"{len(urls)} bestanden gevonden ✓")
     if debug:
-        for u in urls[:3]:
+        for u in urls[:2]:
             print(f"    {u}")
 
-    # Bouw DuckDB URL lijst
     url_list = ", ".join(f"'{u}'" for u in urls)
 
     con = duckdb.connect()
     try:
         con.execute("INSTALL httpfs; LOAD httpfs;")
+        con.execute("SET enable_progress_bar = false;")
     except Exception:
         pass
 
@@ -150,15 +147,12 @@ def _build_index_duckdb(species_list: list[dict], max_per_species: int, debug: b
         scientific = species_info["scientific"]
         slug = _slug(scientific)
         nl = species_info["nl"]
-
-        # Genus + soort splitsen voor LIKE query
         parts = scientific.split(" ", 1)
         genus = parts[0]
         soort = parts[1] if len(parts) > 1 else ""
         like_pattern = f"%{genus} {soort}%"
 
         print(f"  Zoeken: {nl} ({scientific})...", end=" ", flush=True)
-
         try:
             result = con.execute(f"""
                 SELECT id
@@ -181,7 +175,7 @@ def _build_index_duckdb(species_list: list[dict], max_per_species: int, debug: b
 
 
 def _build_index_stream(species_list: list[dict], max_per_species: int, debug: bool) -> dict[str, list[str]]:
-    """Fallback: stream dataset zonder audio."""
+    """Fallback: stream dataset zonder audio decoding."""
     print("📋 Stap 1: Index bouwen via streaming (fallback)...")
     target_names = _scientific_names(species_list)
 
@@ -197,7 +191,7 @@ def _build_index_stream(species_list: list[dict], max_per_species: int, debug: b
     iterator = tqdm(ds_meta, desc="Index scannen", unit=" samples") if HAS_TQDM else ds_meta
 
     for sample in iterator:
-        if sample.get("task") and "taxonomic" not in sample.get("task", ""):
+        if "taxonomic" not in sample.get("task", ""):
             continue
         species_name = _extract_species_from_output(sample.get("output", "")).lower()
         if species_name in target_names:
@@ -229,7 +223,6 @@ def _save_audio_as_wav(audio_data, dest: Path, sample_rate: int = SAMPLE_RATE) -
             sf.write(str(dest), array, sr, subtype="PCM_16")
             return True
 
-        # Fallback PCM
         import struct
         if isinstance(audio_data, dict):
             samples = audio_data.get("array", [])
@@ -276,9 +269,8 @@ def download_from_naturelm(
     # === STAP 1: Index ===
     if HAS_DUCKDB:
         index = _build_index_duckdb(species_list, max_per_species, debug)
-        # Als alle DuckDB queries mislukten → fallback
         if not index or all(len(v) == 0 for v in index.values()):
-            print("  DuckDB leverde geen resultaten, gebruik streaming fallback...")
+            print("  DuckDB leverde geen resultaten → streaming fallback...")
             index = _build_index_stream(species_list, max_per_species, debug)
     else:
         print("⚠ pip install duckdb voor snellere index.")
