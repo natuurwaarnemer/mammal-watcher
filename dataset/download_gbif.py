@@ -113,7 +113,7 @@ def _collect_sound_media(occurrences: list[dict]) -> list[dict]:
 
         media_items = occurrence.get("media") or []
         for media in media_items:
-            if str(media.get("type", "")).lower() != "sound":
+            if media.get("type", "").lower() != "sound":
                 continue
             url = media.get("identifier")
             if not url:
@@ -254,10 +254,11 @@ def download_species(
 
         if is_new:
             downloaded += 1
+            record_taxon_key = sound["taxon_key"] if sound["taxon_key"] is not None else taxon_key
             metadata_records.append({
                 "source": "gbif",
                 "occurrenceID": occurrence_id,
-                "taxonKey": sound.get("taxon_key") or taxon_key,
+                "taxonKey": record_taxon_key,
                 "license": sound.get("license"),
                 "url": url,
                 "local_file": str(dest),
