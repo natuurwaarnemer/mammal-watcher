@@ -30,6 +30,7 @@ except ImportError:
 
 INAT_API_BASE = "https://api.inaturalist.org/v1"
 DOWNLOAD_DELAY = 0.5  # seconden tussen downloads (respecteer de server)
+PAGE_REQUEST_DELAY = 0.2  # seconden tussen pagina-verzoeken
 PAGE_SIZE = 200  # maximaal toegestaan door iNaturalist API
 
 
@@ -170,7 +171,7 @@ def download_species(
             break
 
         page += 1
-        time.sleep(0.2)  # korte pauze tussen pagina-verzoeken
+        time.sleep(PAGE_REQUEST_DELAY)
 
     if not all_sounds:
         print("  Geen geluidsbestanden gevonden.")
