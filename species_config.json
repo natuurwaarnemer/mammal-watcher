@@ -1,0 +1,124 @@
+{
+  "species": [
+    {
+      "scientific": "Vulpes vulpes",
+      "nl": "vos",
+      "en": "red fox",
+      "emoji": "🦊",
+      "family": "Canidae",
+      "inaturalist_taxon_id": 42051,
+      "priority": "high",
+      "alert": true
+    },
+    {
+      "scientific": "Canis lupus",
+      "nl": "wolf",
+      "en": "gray wolf",
+      "emoji": "🐺",
+      "family": "Canidae",
+      "inaturalist_taxon_id": 42048,
+      "priority": "very_high",
+      "alert": true
+    },
+    {
+      "scientific": "Canis aureus",
+      "nl": "goudjakhals",
+      "en": "golden jackal",
+      "emoji": "🐺",
+      "family": "Canidae",
+      "inaturalist_taxon_id": 851014,
+      "priority": "high",
+      "alert": true
+    },
+    {
+      "scientific": "Martes martes",
+      "nl": "boommarter",
+      "en": "pine marten",
+      "emoji": "🟫",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": 41796,
+      "priority": "high",
+      "alert": true
+    },
+    {
+      "scientific": "Martes foina",
+      "nl": "steenmarter",
+      "en": "stone marten",
+      "emoji": "🤎",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": 41800,
+      "priority": "medium",
+      "alert": true
+    },
+    {
+      "scientific": "Meles meles",
+      "nl": "das",
+      "en": "European badger",
+      "emoji": "⚫",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": 855297,
+      "priority": "high",
+      "alert": true
+    },
+    {
+      "scientific": "Lutra lutra",
+      "nl": "otter",
+      "en": "Eurasian otter",
+      "emoji": "🦦",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": 41850,
+      "priority": "very_high",
+      "alert": true
+    },
+    {
+      "scientific": "Capreolus capreolus",
+      "nl": "ree",
+      "en": "roe deer",
+      "emoji": "🦌",
+      "family": "Cervidae",
+      "inaturalist_taxon_id": 42184,
+      "priority": "medium",
+      "alert": false
+    },
+    {
+      "scientific": "Cervus elaphus",
+      "nl": "edelhert",
+      "en": "red deer",
+      "emoji": "🦌",
+      "family": "Cervidae",
+      "inaturalist_taxon_id": 204113,
+      "priority": "medium",
+      "alert": false
+    },
+    {
+      "scientific": "Sus scrofa",
+      "nl": "wild zwijn",
+      "en": "wild boar",
+      "emoji": "🐗",
+      "family": "Suidae",
+      "inaturalist_taxon_id": 42158,
+      "priority": "low",
+      "alert": false
+    },
+    {
+      "scientific": "Castor fiber",
+      "nl": "bever",
+      "en": "Eurasian beaver",
+      "emoji": "🦫",
+      "family": "Castoridae",
+      "inaturalist_taxon_id": 43793,
+      "priority": "high",
+      "alert": true
+    },
+    {
+      "scientific": "Lynx lynx",
+      "nl": "lynx",
+      "en": "Eurasian lynx",
+      "emoji": "🐈",
+      "family": "Felidae",
+      "inaturalist_taxon_id": 41979,
+      "priority": "very_high",
+      "alert": true
+    }
+  ]
+}
