@@ -4,6 +4,7 @@ species:
     en: "red fox"
     priority: high
     alert: true
+    inaturalist_taxon_id: 42051
     xeno_canto_query: "Vulpes vulpes"
     macaulay_query: "Red Fox"
 
@@ -12,6 +13,7 @@ species:
     en: "European badger"
     priority: high
     alert: true
+    inaturalist_taxon_id: 855297
     xeno_canto_query: "Meles meles"
     macaulay_query: "European Badger"
 
@@ -20,6 +22,7 @@ species:
     en: "Eurasian otter"
     priority: very_high
     alert: true
+    inaturalist_taxon_id: 41850
     xeno_canto_query: "Lutra lutra"
     macaulay_query: "Eurasian Otter"
 
@@ -28,8 +31,18 @@ species:
     en: "gray wolf"
     priority: very_high
     alert: true
+    inaturalist_taxon_id: 42048
     xeno_canto_query: "Canis lupus"
     macaulay_query: "Gray Wolf"
+
+  - scientific: "Canis aureus"
+    nl: "goudjakhals"
+    en: "golden jackal"
+    priority: high
+    alert: true
+    inaturalist_taxon_id: 851014
+    xeno_canto_query: "Canis aureus"
+    macaulay_query: "Golden Jackal"
 
   - scientific: "Mustela nivalis"
     nl: "wezel"
@@ -44,6 +57,7 @@ species:
     en: "stone marten"
     priority: medium
     alert: true
+    inaturalist_taxon_id: 41800
     xeno_canto_query: "Martes foina"
     macaulay_query: "Stone Marten"
 
@@ -52,6 +66,7 @@ species:
     en: "pine marten"
     priority: high
     alert: true
+    inaturalist_taxon_id: 41796
     xeno_canto_query: "Martes martes"
     macaulay_query: "Pine Marten"
 
@@ -60,6 +75,7 @@ species:
     en: "Eurasian beaver"
     priority: high
     alert: true
+    inaturalist_taxon_id: 43793
     xeno_canto_query: "Castor fiber"
     macaulay_query: "Eurasian Beaver"
 
@@ -68,13 +84,33 @@ species:
     en: "roe deer"
     priority: medium
     alert: false
+    inaturalist_taxon_id: 42184
     xeno_canto_query: "Capreolus capreolus"
     macaulay_query: "Roe Deer"
+
+  - scientific: "Cervus elaphus"
+    nl: "edelhert"
+    en: "red deer"
+    priority: medium
+    alert: false
+    inaturalist_taxon_id: 204113
+    xeno_canto_query: "Cervus elaphus"
+    macaulay_query: "Red Deer"
 
   - scientific: "Sus scrofa"
     nl: "wild zwijn"
     en: "wild boar"
     priority: low
     alert: false
+    inaturalist_taxon_id: 42158
     xeno_canto_query: "Sus scrofa"
     macaulay_query: "Wild Boar"
+
+  - scientific: "Lynx lynx"
+    nl: "lynx"
+    en: "Eurasian lynx"
+    priority: very_high
+    alert: true
+    inaturalist_taxon_id: 41979
+    xeno_canto_query: "Lynx lynx"
+    macaulay_query: "Eurasian Lynx"
