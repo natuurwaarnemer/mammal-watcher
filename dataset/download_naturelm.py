@@ -2,9 +2,10 @@
 Download zoogdiergeluiden via NatureLM dataset (Earth Species Project) van Hugging Face.
 
 Strategie:
-  1. Stream dataset ZONDER audio (cast_column Audio decode=False) → snel scannen
-  2. Download alleen audio voor matching IDs via tweede stream pass
-  3. Sla op als WAV via soundfile
+  1. Laad alleen Parquet metadata kolommen (id, task, output) — geen audio bytes → minuten i.p.v. uren
+  2. Filter in-memory op gewenste soorten en sla index op als checkpoint JSON
+  3. Download alleen audio voor matching IDs via streaming pass
+  4. Sla op als WAV via soundfile
 
 Gebruik: python dataset/download_naturelm.py --output dataset/raw --species-file dataset/species_targets.yaml
 """
@@ -34,7 +35,7 @@ except ImportError:
     HAS_SOUNDFILE = False
 
 try:
-    from datasets import load_dataset, Audio
+    from datasets import load_dataset
     HAS_DATASETS = True
 except ImportError:
     HAS_DATASETS = False
@@ -73,35 +74,55 @@ def _extract_species_from_output(output: str) -> str:
     return output.strip()
 
 
-def _build_index(species_list: list[dict], max_per_species: int, debug: bool) -> dict[str, list[str]]:
+def _build_index(
+    species_list: list[dict],
+    max_per_species: int,
+    debug: bool,
+    checkpoint_path: Path,
+    force_reindex: bool = False,
+) -> dict[str, list[str]]:
     """
-    Stap 1: Stream dataset ZONDER audio te decoderen.
+    Stap 1: Laad metadata via Parquet (geen audio), filter op soorten.
     Bouwt index {slug: [id, ...]} van alle matching samples.
+    Slaat de index op als checkpoint JSON voor herstart.
     """
-    print("📋 Stap 1: Index bouwen (geen audio, alleen tekst)...")
+    # Laad checkpoint als het bestaat en --force-reindex niet gezet is
+    if not force_reindex and checkpoint_path.exists():
+        print(f"📂 Checkpoint gevonden: {checkpoint_path}")
+        try:
+            with checkpoint_path.open(encoding="utf-8") as fh:
+                data: dict[str, list[str]] = json.load(fh)
+            total = sum(len(v) for v in data.values())
+            print(f"  ✓ Index geladen uit checkpoint: {total} opnames")
+            return data
+        except Exception as exc:
+            print(f"  ⚠ Checkpoint laden mislukt ({exc}), herbouw index...", file=sys.stderr)
+
+    print("📋 Stap 1: Parquet metadata laden (geen audio)...")
     target_names = _scientific_names(species_list)
 
     try:
-        ds_meta = load_dataset(NATURELM_DATASET, split="train", streaming=True)
-        # Geen audio decoding — alleen tekst kolommen lezen
-        ds_meta = ds_meta.cast_column("audio", Audio(decode=False))
+        ds_meta = load_dataset(
+            NATURELM_DATASET,
+            split="train",
+            columns=["id", "task", "output"],
+        )
     except Exception as exc:
         print(f"⚠ Dataset laden mislukt: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    print(f"  Filter op {len(species_list)} soorten...")
     index: dict[str, list[str]] = {_slug(s["scientific"]): [] for s in species_list}
 
-    # Check of alle soorten al vol zijn
     def _all_done() -> bool:
         return all(len(index[_slug(s["scientific"])]) >= max_per_species for s in species_list)
 
-    iterator = tqdm(ds_meta, desc="Index scannen", unit=" samples") if HAS_TQDM else ds_meta
+    iterator = tqdm(ds_meta, desc="Parquet filteren", unit=" samples") if HAS_TQDM else ds_meta
 
     for sample in iterator:
         if _all_done():
             break
 
-        # Veilige task-check: task kan None zijn
         task = sample.get("task") or ""
         if "taxonomic" not in task:
             continue
@@ -118,6 +139,20 @@ def _build_index(species_list: list[dict], max_per_species: int, debug: bool) ->
             index[slug].append(sample_id)
             if debug:
                 print(f"  ✓ {species_name} → {sample_id}")
+
+    for species_info in species_list:
+        slug = _slug(species_info["scientific"])
+        n = len(index.get(slug, []))
+        print(f"  {'✓' if n > 0 else '✗'} {species_info['scientific']}: {n} matches")
+
+    # Sla index op als checkpoint
+    try:
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        with checkpoint_path.open("w", encoding="utf-8") as fh:
+            json.dump(index, fh, ensure_ascii=False, indent=2)
+        print(f"  Index opgeslagen: {checkpoint_path}")
+    except Exception as exc:
+        print(f"  ⚠ Checkpoint opslaan mislukt: {exc}", file=sys.stderr)
 
     return index
 
@@ -174,17 +209,22 @@ def download_from_naturelm(
     output_dir: Path,
     max_per_species: int,
     debug: bool = False,
+    checkpoint_path: Path | None = None,
+    force_reindex: bool = False,
 ) -> dict[str, int]:
     if not HAS_DATASETS:
         print("⚠ pip install datasets", file=sys.stderr)
         sys.exit(1)
 
+    if checkpoint_path is None:
+        checkpoint_path = output_dir.parent / "index_checkpoint.json"
+
     species_by_name = {s["scientific"].lower(): s for s in species_list}
     counters: dict[str, int] = {_slug(s["scientific"]): 0 for s in species_list}
     metadata_buffers: dict[str, list[dict]] = {_slug(s["scientific"]): [] for s in species_list}
 
-    # === STAP 1: Index bouwen (geen audio) ===
-    index = _build_index(species_list, max_per_species, debug)
+    # === STAP 1: Index bouwen via Parquet metadata (geen audio) ===
+    index = _build_index(species_list, max_per_species, debug, checkpoint_path, force_reindex)
 
     total_matches = sum(len(v) for v in index.values())
     print(f"\n  Totaal: {total_matches} opnames gevonden")
@@ -264,6 +304,11 @@ def main() -> None:
     parser.add_argument("--species-file", default="dataset/species_targets.yaml")
     parser.add_argument("--dataset", default=NATURELM_DATASET)
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--force-reindex",
+        action="store_true",
+        help="Negeer bestaand checkpoint en herbouw de index",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output)
@@ -283,7 +328,13 @@ def main() -> None:
     print(f"Dataset: {args.dataset}")
     print(f"Uitvoer: {output_dir.resolve()}\n")
 
-    counters = download_from_naturelm(species_list, output_dir, args.max_per_species, debug=args.debug)
+    counters = download_from_naturelm(
+        species_list,
+        output_dir,
+        args.max_per_species,
+        debug=args.debug,
+        force_reindex=args.force_reindex,
+    )
 
     print("\n📊 Resultaat:")
     total = 0
