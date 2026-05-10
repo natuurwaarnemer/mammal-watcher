@@ -8,7 +8,8 @@
       "family": "Canidae",
       "inaturalist_taxon_id": 42051,
       "priority": "high",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5219243
     },
     {
       "scientific": "Canis lupus",
@@ -18,7 +19,8 @@
       "family": "Canidae",
       "inaturalist_taxon_id": 42048,
       "priority": "very_high",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5219206
     },
     {
       "scientific": "Canis aureus",
@@ -28,7 +30,8 @@
       "family": "Canidae",
       "inaturalist_taxon_id": 851014,
       "priority": "high",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5219218
     },
     {
       "scientific": "Martes martes",
@@ -38,7 +41,8 @@
       "family": "Mustelidae",
       "inaturalist_taxon_id": 41796,
       "priority": "high",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5219030
     },
     {
       "scientific": "Martes foina",
@@ -48,7 +52,8 @@
       "family": "Mustelidae",
       "inaturalist_taxon_id": 41800,
       "priority": "medium",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5219032
     },
     {
       "scientific": "Meles meles",
@@ -58,7 +63,8 @@
       "family": "Mustelidae",
       "inaturalist_taxon_id": 855297,
       "priority": "high",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5219047
     },
     {
       "scientific": "Lutra lutra",
@@ -68,7 +74,8 @@
       "family": "Mustelidae",
       "inaturalist_taxon_id": 41850,
       "priority": "very_high",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5219035
     },
     {
       "scientific": "Capreolus capreolus",
@@ -78,7 +85,8 @@
       "family": "Cervidae",
       "inaturalist_taxon_id": 42184,
       "priority": "medium",
-      "alert": false
+      "alert": false,
+      "gbif_taxon_key": 2440897
     },
     {
       "scientific": "Cervus elaphus",
@@ -88,7 +96,8 @@
       "family": "Cervidae",
       "inaturalist_taxon_id": 204113,
       "priority": "medium",
-      "alert": false
+      "alert": false,
+      "gbif_taxon_key": 2440905
     },
     {
       "scientific": "Sus scrofa",
@@ -98,7 +107,8 @@
       "family": "Suidae",
       "inaturalist_taxon_id": 42158,
       "priority": "low",
-      "alert": false
+      "alert": false,
+      "gbif_taxon_key": 5219416
     },
     {
       "scientific": "Castor fiber",
@@ -108,7 +118,8 @@
       "family": "Castoridae",
       "inaturalist_taxon_id": 43793,
       "priority": "high",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5820003
     },
     {
       "scientific": "Lynx lynx",
@@ -118,7 +129,8 @@
       "family": "Felidae",
       "inaturalist_taxon_id": 41979,
       "priority": "very_high",
-      "alert": true
+      "alert": true,
+      "gbif_taxon_key": 5219072
     }
   ]
 }

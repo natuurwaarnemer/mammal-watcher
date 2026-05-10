@@ -7,6 +7,8 @@ Deze map bevat de volledige pipeline voor het downloaden en voorbereiden van tra
 ```
 dataset/
 ├── species_targets.yaml       # Doelsoorten met metadata
+├── download_inaturalist.py    # Download bron 1: iNaturalist (open)
+├── download_gbif.py           # Download bron 2: GBIF (excl. iNaturalist dataset)
 ├── download_naturelm.py       # Primaire downloader: NatureLM dataset (Hugging Face)
 ├── download_freesound.py      # Aanvullende downloader: Freesound.org API
 ├── prepare_dataset.py         # Converteert audio → 16kHz mono WAV chunks
@@ -20,6 +22,14 @@ models/                        # Getrainde modellen (niet in git)
 ```
 
 ## Stap-voor-stap
+
+### Workflow (iNaturalist + GBIF)
+
+```bash
+python dataset/download_inaturalist.py --output /mnt/usb/audio   # ~7000 clips
+python dataset/download_gbif.py --output /mnt/usb/audio          # ~758 extra clips (geen iNat duplicaten)
+python dataset/prepare_dataset.py ...
+```
 
 ### 1. Trainingsdata downloaden (NatureLM — primaire bron)
 
