@@ -35,6 +35,7 @@ DOWNLOAD_DELAY = 0.5  # seconden tussen downloads (respecteer de server)
 PAGE_REQUEST_DELAY = 0.2  # seconden tussen pagina-verzoeken
 PAGE_SIZE = 300  # maximaal toegestaan door GBIF API
 
+# Backward-compatibele fallback als species-bestand nog geen gbif_taxon_key bevat.
 GBIF_TAXON_KEYS = {
     "Vulpes vulpes": 5219243,
     "Canis lupus": 5219206,

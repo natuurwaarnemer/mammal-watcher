@@ -39,16 +39,18 @@ def test_collect_sound_media_filters_non_sound_and_missing_identifier() -> None:
             "media": [
                 {"type": "StillImage", "identifier": "https://example.org/image.jpg"},
                 {"type": "Sound", "identifier": "https://example.org/a.mp3", "format": "audio/mpeg"},
+                {"type": "SOUND", "identifier": "https://example.org/b.wav", "format": "audio/wav"},
                 {"type": "Sound", "format": "audio/wav"},
             ],
         }
     ]
 
     sounds = module._collect_sound_media(occurrences)
-    assert len(sounds) == 1
+    assert len(sounds) == 2
     assert sounds[0]["occurrence_id"] == "occ-1"
     assert sounds[0]["url"] == "https://example.org/a.mp3"
     assert sounds[0]["format"] == "audio/mpeg"
+    assert sounds[1]["url"] == "https://example.org/b.wav"
 
 
 def test_guess_extension_uses_format_when_url_has_no_suffix() -> None:
