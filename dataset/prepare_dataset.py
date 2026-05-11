@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -38,6 +40,7 @@ except ImportError:
 TARGET_SR = 16000
 CHUNK_SECONDS = 5
 INDEX_FILENAME = "index.csv"
+AUDIO_EXTENSIONS = {"mp3", "wav", "ogg", "flac", "m4a", "aac", "opus"}
 
 
 def _decode_audio_av(path: Path) -> tuple[np.ndarray, int]:
@@ -100,23 +103,61 @@ def _species_meta_from_dir(species_dir: Path) -> dict:
     return {"slug": species_dir.name}
 
 
+def _load_species(species_file: Path) -> dict[str, dict]:
+    """Laad soortmetadata uit species_config.json of species_targets.yaml als lookup op slug."""
+    if not species_file.exists():
+        return {}
+
+    suffix = species_file.suffix.lower()
+    with species_file.open(encoding="utf-8") as fh:
+        if suffix == ".json":
+            data = json.load(fh)
+        else:
+            try:
+                import yaml
+            except ImportError:
+                print("⚠ pip install pyyaml voor YAML ondersteuning", file=sys.stderr)
+                sys.exit(1)
+            data = yaml.safe_load(fh)
+
+    species_map: dict[str, dict] = {}
+    for sp in data.get("species", []):
+        slug = re.sub(r"\s+", "_", sp["scientific"].strip().lower())
+        species_map[slug] = sp
+    return species_map
+
+
+def _audio_files(species_dir: Path) -> list[Path]:
+    """Vind ondersteunde audiobestanden in een soortmap."""
+    return sorted(
+        p
+        for p in species_dir.iterdir()
+        if p.is_file() and p.suffix.lower().lstrip(".") in AUDIO_EXTENSIONS
+    )
+
+
+def _detect_source(audio_path: Path) -> str:
+    """Bepaal bron op basis van bestandsnaam-prefix."""
+    return "gbif" if audio_path.name.lower().startswith("gbif_") else "inaturalist"
+
+
 def process_file(
-    mp3_path: Path,
+    audio_path: Path,
     output_dir: Path,
     species_slug: str,
     species_scientific: str,
     species_nl: str,
     source: str,
 ) -> list[dict]:
-    """Verwerk één MP3 en sla WAV-chunks op. Geeft indexrijen terug."""
+    """Verwerk één audiobestand en sla WAV-chunks op. Geeft indexrijen terug."""
     if not HAS_AV:
-        print(f"  ⚠ PyAV niet beschikbaar, sla over: {mp3_path.name}", file=sys.stderr)
+        print(f"  ⚠ PyAV niet beschikbaar, sla over: {audio_path.name}", file=sys.stderr)
         return []
 
     try:
-        audio, sr = _decode_audio_av(mp3_path)
+        audio, sr = _decode_audio_av(audio_path)
     except Exception as exc:  # noqa: BLE001
-        print(f"  ⚠ Decodering mislukt ({mp3_path.name}): {exc}", file=sys.stderr)
+        print(f"  ⚠ Decodering mislukt ({audio_path.name}): {exc}", file=sys.stderr)
         return []
 
     audio_16k = _resample(audio, sr, TARGET_SR)
@@ -128,7 +169,7 @@ def process_file(
     out_species_dir.mkdir(parents=True, exist_ok=True)
 
     rows: list[dict] = []
-    stem = mp3_path.stem
+    stem = audio_path.stem
     for i, chunk in enumerate(chunks):
         chunk_name = f"{stem}_chunk{i:04d}.wav"
         chunk_path = out_species_dir / chunk_name
@@ -147,11 +188,14 @@ def process_file(
 
 
 def main() -> None:
+    _script_dir = Path(__file__).resolve().parent
+    _default_species_file = _script_dir.parent / "species_config.json"
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input",
         default="dataset/raw",
-        help="Map met ruwe MP3-downloads (standaard: dataset/raw)",
+        help="Map met ruwe audio-downloads (standaard: dataset/raw)",
     )
     parser.add_argument(
         "--output",
@@ -160,8 +204,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--species-file",
-        default="dataset/species_targets.yaml",
-        help="Pad naar species_targets.yaml",
+        default=str(_default_species_file),
+        help="Pad naar species_config.json of species_targets.yaml",
     )
     args = parser.parse_args()
 
@@ -173,18 +217,7 @@ def main() -> None:
         print(f"Invoermap niet gevonden: {input_dir}", file=sys.stderr)
         sys.exit(1)
 
-    # Laad soortmetadata als lookup op slug
-    import yaml  # noqa: PLC0415
-
-    species_map: dict[str, dict] = {}
-    if species_file.exists():
-        import re  # noqa: PLC0415
-
-        with species_file.open(encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-        for sp in data.get("species", []):
-            slug = re.sub(r"\s+", "_", sp["scientific"].strip().lower())
-            species_map[slug] = sp
+    species_map = _load_species(species_file)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     index_rows: list[dict] = []
@@ -198,19 +231,19 @@ def main() -> None:
         scientific = meta.get("scientific", slug.replace("_", " ").title())
         nl_name = meta.get("nl", slug)
 
-        mp3_files = sorted(species_dir.glob("*.mp3"))
-        if not mp3_files:
+        audio_files = _audio_files(species_dir)
+        if not audio_files:
             continue
 
-        file_iter = tqdm(mp3_files, desc=slug, leave=False) if HAS_TQDM else mp3_files
-        for mp3_path in file_iter:
+        file_iter = tqdm(audio_files, desc=slug, leave=False) if HAS_TQDM else audio_files
+        for audio_path in file_iter:
             rows = process_file(
-                mp3_path,
+                audio_path,
                 output_dir,
                 slug,
                 scientific,
                 nl_name,
-                source="xeno-canto",
+                source=_detect_source(audio_path),
             )
             index_rows.extend(rows)
 
