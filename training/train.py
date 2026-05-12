@@ -191,7 +191,8 @@ def _augment_waveform(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
         window=_window,
         return_complex=True,
     ).unsqueeze(0)  # (1, freq_bins, time_frames)
-    phase_advance = torch.linspace(0, np.pi * _hop, stft.shape[1])[:, None]
+    n_freq = _n_fft // 2 + 1
+    phase_advance = torch.linspace(0, np.pi * _hop, n_freq)[:, None]
     stft_stretched = torchaudio.functional.phase_vocoder(stft, rate, phase_advance)
     target_len = max(1, int(orig_len / rate))
     waveform = torch.istft(
@@ -582,6 +583,7 @@ def main() -> None:
     data_path = Path(args.data)
     output_dir = Path(args.output)
     species_file = Path(args.species_file)
+    device = torch.device("cpu")
 
     if not data_path.exists():
         print(f"Indexbestand niet gevonden: {data_path}", file=sys.stderr)
@@ -598,11 +600,9 @@ def main() -> None:
         sys.exit(1)
 
     # Trainingsset inpakken met augmentatie en klasse-gewichten berekenen
-    device = torch.device("cpu")
     augmented_train = AugmentedTrainDataset(train_set, augment=args.augment)
     class_weights = _compute_class_weights(augmented_train.get_labels(), len(class_to_idx), device=device)
-    if not args.augment:
-        print("Data-augmentatie uitgeschakeld.")
+    print("Data-augmentatie:", "ingeschakeld" if args.augment else "uitgeschakeld")
 
     train_loader = DataLoader(
         augmented_train,
