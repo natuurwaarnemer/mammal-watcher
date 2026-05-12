@@ -177,12 +177,30 @@ def _augment_waveform(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
     n_steps = random.uniform(-2.0, 2.0)
     waveform = torchaudio.functional.pitch_shift(waveform, sample_rate, n_steps)
 
-    # TimeStretch: tijdrekking via hersampling (factor 0.8–1.2), gevolgd door trim/pad
-    # rate < 1 → langzamer (meer samples), rate > 1 → sneller (minder samples)
+    # TimeStretch: tijdrekking via phase vocoder (behoudt toonhoogte, factor 0.8–1.2)
+    # rate < 1 → langzamer (meer frames), rate > 1 → sneller (minder frames)
     rate = random.uniform(0.8, 1.2)
     orig_len = waveform.shape[1]
-    stretched_len = max(1, int(orig_len / rate))
-    waveform = torchaudio.functional.resample(waveform, orig_freq=orig_len, new_freq=stretched_len)
+    _n_fft = 512
+    _hop = _n_fft // 4
+    _window = torch.hann_window(_n_fft)
+    stft = torch.stft(
+        waveform.squeeze(0),
+        n_fft=_n_fft,
+        hop_length=_hop,
+        window=_window,
+        return_complex=True,
+    ).unsqueeze(0)  # (1, freq_bins, time_frames)
+    phase_advance = torch.linspace(0, np.pi * _hop, stft.shape[1])[:, None]
+    stft_stretched = torchaudio.functional.phase_vocoder(stft, rate, phase_advance)
+    target_len = max(1, int(orig_len / rate))
+    waveform = torch.istft(
+        stft_stretched.squeeze(0),
+        n_fft=_n_fft,
+        hop_length=_hop,
+        window=_window,
+        length=target_len,
+    ).unsqueeze(0)
     if waveform.shape[1] > orig_len:
         waveform = waveform[:, :orig_len]
     elif waveform.shape[1] < orig_len:
@@ -331,7 +349,7 @@ def _set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def _split_dataset(dataset: Dataset[tuple[torch.Tensor, int]]) -> tuple[Dataset, Dataset, Dataset]:
+def _split_dataset(dataset: Dataset[tuple[torch.Tensor, int]]) -> tuple[Subset, Subset, Subset]:
     """Splits dataset in train/val/test met verhouding 70/15/15."""
     total = len(dataset)
     train_size = int(total * 0.70)
@@ -581,7 +599,7 @@ def main() -> None:
 
     # Trainingsset inpakken met augmentatie en klasse-gewichten berekenen
     device = torch.device("cpu")
-    augmented_train = AugmentedTrainDataset(train_set, augment=args.augment)  # type: ignore[arg-type]
+    augmented_train = AugmentedTrainDataset(train_set, augment=args.augment)
     class_weights = _compute_class_weights(augmented_train.get_labels(), len(class_to_idx), device=device)
     if not args.augment:
         print("Data-augmentatie uitgeschakeld.")
