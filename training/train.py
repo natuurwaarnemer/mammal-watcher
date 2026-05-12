@@ -162,7 +162,14 @@ class AudioChunkDataset(Dataset[tuple[torch.Tensor, int]]):
 
 
 def _augment_waveform(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
-    """Pas waveform-niveau augmentaties toe: ruis, tijdrekking, toonhoogte en volume."""
+    """Pas waveform-niveau augmentaties toe: ruis en volume.
+
+    PitchShift en TimeStretch zijn verwijderd: beide berekenen intern een STFT
+    (via torchaudio.functional.pitch_shift / phase_vocoder) en zijn daardoor
+    extreem traag op CPU (~57s/it → ~1-2s/it na deze wijziging).
+    SpecAugment (FrequencyMasking + TimeMasking) in _augment_spectrogram
+    levert vergelijkbare robuustheid zonder de rekenlast.
+    """
     # VolumeJitter: volume variëren (0.7–1.3x)
     gain = random.uniform(0.7, 1.3)
     waveform = waveform * gain
@@ -172,40 +179,6 @@ def _augment_waveform(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
     signal_power = waveform.pow(2).mean().clamp(min=_MIN_SIGNAL_POWER)
     noise_power = signal_power / (10 ** (snr_db / 10.0))
     waveform = waveform + torch.randn_like(waveform) * noise_power.sqrt()
-
-    # PitchShift: toonhoogte licht verschuiven (±2 semitonen)
-    n_steps = random.uniform(-2.0, 2.0)
-    waveform = torchaudio.functional.pitch_shift(waveform, sample_rate, n_steps)
-
-    # TimeStretch: tijdrekking via phase vocoder (behoudt toonhoogte, factor 0.8–1.2)
-    # rate < 1 → langzamer (meer frames), rate > 1 → sneller (minder frames)
-    rate = random.uniform(0.8, 1.2)
-    orig_len = waveform.shape[1]
-    _n_fft = 512
-    _hop = _n_fft // 4
-    _window = torch.hann_window(_n_fft)
-    stft = torch.stft(
-        waveform.squeeze(0),
-        n_fft=_n_fft,
-        hop_length=_hop,
-        window=_window,
-        return_complex=True,
-    ).unsqueeze(0)  # (1, freq_bins, time_frames)
-    n_freq = _n_fft // 2 + 1
-    phase_advance = torch.linspace(0, np.pi * _hop, n_freq)[:, None]
-    stft_stretched = torchaudio.functional.phase_vocoder(stft, rate, phase_advance)
-    target_len = max(1, int(orig_len / rate))
-    waveform = torch.istft(
-        stft_stretched.squeeze(0),
-        n_fft=_n_fft,
-        hop_length=_hop,
-        window=_window,
-        length=target_len,
-    ).unsqueeze(0)
-    if waveform.shape[1] > orig_len:
-        waveform = waveform[:, :orig_len]
-    elif waveform.shape[1] < orig_len:
-        waveform = torch.nn.functional.pad(waveform, (0, orig_len - waveform.shape[1]))
 
     return waveform
 
@@ -559,7 +532,7 @@ def parse_args() -> argparse.Namespace:
         help="Pad naar species_config.json",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--num-workers", type=int, default=0, help="Aantal DataLoader workers")
+    parser.add_argument("--num-workers", type=int, default=4, help="Aantal DataLoader workers")
     parser.add_argument(
         "--augment",
         dest="augment",
