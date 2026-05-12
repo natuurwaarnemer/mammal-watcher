@@ -155,6 +155,8 @@ def test_augmented_train_dataset_wraps_subset(tmp_path: Path) -> None:
     aug_dataset = module.AugmentedTrainDataset(subset, augment=True)
 
     assert len(aug_dataset) == len(dataset)
+    labels = aug_dataset.get_labels()
+    assert len(labels) == len(dataset)
     mel, label = aug_dataset[0]
     assert mel.ndim == 3
     assert mel.shape[0] == 1

@@ -65,6 +65,13 @@ MODEL_FILENAME = "mammal_cnn.pt"
 AUGMENT_ALWAYS_THRESHOLD: int = 500
 AUGMENT_SOMETIMES_THRESHOLD: int = 2000
 
+# Augmentatie-parameters (SpecAugment maskeringsgrootte)
+FREQ_MASK_PARAM: int = 10   # maximale breedte frequentieband-masker (mel-bins)
+TIME_MASK_PARAM: int = 20   # maximale breedte tijdsband-masker (frames)
+
+# Minimale signaalvermogen bij SNR-berekening (voorkomt deling door nul)
+_MIN_SIGNAL_POWER: float = 1e-9
+
 
 def _species_slug(value: str) -> str:
     """Normaliseer wetenschappelijke naam naar slug-formaat."""
@@ -162,7 +169,7 @@ def _augment_waveform(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
 
     # AddNoise: Gaussische ruis toevoegen (SNR 20–40 dB)
     snr_db = random.uniform(20.0, 40.0)
-    signal_power = waveform.pow(2).mean().clamp(min=1e-9)
+    signal_power = waveform.pow(2).mean().clamp(min=_MIN_SIGNAL_POWER)
     noise_power = signal_power / (10 ** (snr_db / 10.0))
     waveform = waveform + torch.randn_like(waveform) * noise_power.sqrt()
 
@@ -171,10 +178,11 @@ def _augment_waveform(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
     waveform = torchaudio.functional.pitch_shift(waveform, sample_rate, n_steps)
 
     # TimeStretch: tijdrekking via hersampling (factor 0.8–1.2), gevolgd door trim/pad
+    # rate < 1 → langzamer (meer samples), rate > 1 → sneller (minder samples)
     rate = random.uniform(0.8, 1.2)
     orig_len = waveform.shape[1]
     stretched_len = max(1, int(orig_len / rate))
-    waveform = torchaudio.functional.resample(waveform, orig_freq=stretched_len, new_freq=orig_len)
+    waveform = torchaudio.functional.resample(waveform, orig_freq=orig_len, new_freq=stretched_len)
     if waveform.shape[1] > orig_len:
         waveform = waveform[:, :orig_len]
     elif waveform.shape[1] < orig_len:
@@ -186,11 +194,11 @@ def _augment_waveform(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
 def _augment_spectrogram(mel_db: torch.Tensor) -> torch.Tensor:
     """Pas spectrogram-niveau augmentaties toe: FrequencyMasking en TimeMasking (SpecAugment)."""
     # FrequencyMasking: blokkeer willekeurige frequentieband
-    freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=10)
+    freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=FREQ_MASK_PARAM)
     mel_db = freq_mask(mel_db)
 
     # TimeMasking: blokkeer willekeurige tijdsband
-    time_mask = torchaudio.transforms.TimeMasking(time_mask_param=20)
+    time_mask = torchaudio.transforms.TimeMasking(time_mask_param=TIME_MASK_PARAM)
     mel_db = time_mask(mel_db)
 
     return mel_db
@@ -205,7 +213,12 @@ class AugmentedTrainDataset(Dataset[tuple[torch.Tensor, int]]):
     """
 
     def __init__(self, subset: Subset, augment: bool = True) -> None:
-        base_dataset: AudioChunkDataset = subset.dataset  # type: ignore[assignment]
+        if not isinstance(subset.dataset, AudioChunkDataset):
+            raise TypeError(
+                f"AugmentedTrainDataset verwacht een AudioChunkDataset als basis, "
+                f"maar kreeg: {type(subset.dataset).__name__}"
+            )
+        base_dataset: AudioChunkDataset = subset.dataset
         self.samples: list[tuple[Path, int]] = [base_dataset.samples[i] for i in subset.indices]
         self.mel_params = base_dataset.mel_params
         self.expected_samples = base_dataset.expected_samples
@@ -226,6 +239,10 @@ class AugmentedTrainDataset(Dataset[tuple[torch.Tensor, int]]):
 
     def __len__(self) -> int:
         return len(self.samples)
+
+    def get_labels(self) -> list[int]:
+        """Geef alle klasse-labels van de trainingssamples terug."""
+        return [label for _, label in self.samples]
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
         file_path, label = self.samples[index]
@@ -563,10 +580,9 @@ def main() -> None:
         sys.exit(1)
 
     # Trainingsset inpakken met augmentatie en klasse-gewichten berekenen
-    augmented_train: Dataset = AugmentedTrainDataset(train_set, augment=args.augment)  # type: ignore[arg-type]
-    train_labels = [label for _, label in augmented_train.samples]  # type: ignore[attr-defined]
     device = torch.device("cpu")
-    class_weights = _compute_class_weights(train_labels, len(class_to_idx), device=device)
+    augmented_train = AugmentedTrainDataset(train_set, augment=args.augment)  # type: ignore[arg-type]
+    class_weights = _compute_class_weights(augmented_train.get_labels(), len(class_to_idx), device=device)
     if not args.augment:
         print("Data-augmentatie uitgeschakeld.")
 
