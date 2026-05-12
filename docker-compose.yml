@@ -14,6 +14,12 @@ services:
     network_mode: host
     depends_on:
       - mediamtx
+    healthcheck:
+      test: ["CMD", "ffprobe", "-rtsp_transport", "tcp", "-i", "rtsp://localhost:8554/mic", "-show_streams", "-select_streams", "a", "-of", "json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     entrypoint:
       - ffmpeg
       - -rtsp_transport
@@ -34,8 +40,10 @@ services:
     restart: unless-stopped
     network_mode: host
     depends_on:
-      - mediamtx
-      - rtsp-bridge
+      mediamtx:
+        condition: service_started
+      rtsp-bridge:
+        condition: service_healthy
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./species_mammals_nl.csv:/app/species_mammals_nl.csv:ro
