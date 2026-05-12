@@ -19,7 +19,7 @@ It started as a personal challenge: train a model that recognises mammals by the
 | Rainforest Connection | High | ✅ | Tropical | ❌ Commercial |
 | BirdNET-Go | Low | ✅ | Birds only | ✅ |
 | AudioMoth | Low | ❌ Record only | All | ✅ |
-| **WildEar** | **~€25** | **✅ Self-learning** | **Mammals + more** | **✅ Open source** |
+| **WildEar** | **~€25** | **✅ Self-learning** | **All wildlife 🌍** | **✅ Open source** |
 
 **Low-cost philosophy:**
 
@@ -174,11 +174,16 @@ MIT — see [LICENSE](LICENSE).
 
 WildEar builds on the shoulders of great open-source projects:
 
-- [BirdNET-Go](https://github.com/tphakala/birdnet-go) — bird detection inspiration and parallel detector
-- [MediaMTX](https://github.com/bluenviron/mediamtx) — RTSP relay
-- [NatureLM](https://github.com/earthspecies/naturelm) (Earth Species Project) — behaviour interpretation
-- [GBIF](https://www.gbif.org/) — ecological presence data
-
+- [Sukecz/esp32-birdnet-mic](https://github.com/Sukecz/esp32-birdnet-mic) 
+  — ESP32 I2S RTSP microphone firmware ← de man die het startte! 🎤
+- [BirdNET-Go](https://github.com/tphakala/birdnet-go) 
+  — bird detection inspiration and parallel detector
+- [MediaMTX](https://github.com/bluenviron/mediamtx) 
+  — RTSP relay
+- [NatureLM](https://github.com/earthspecies/NatureLM-audio) 
+  — behaviour interpretation
+- [GBIF](https://www.gbif.org/) 
+  — ecological presence data
 ---
 
 ## Current Development Setup
