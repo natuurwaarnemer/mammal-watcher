@@ -3,6 +3,8 @@ Train een compact CNN-model op 5s WAV-chunks uit index.csv.
 
 Gebruik:
 python training/train.py --data /mnt/usb/prepared/index.csv --output models/ --epochs 30 --batch-size 32
+python training/train.py --data /mnt/usb/prepared/index.csv --output models/ --epochs 30 --batch-size 32 --augment
+python training/train.py --data /mnt/usb/prepared/index.csv --output models/ --epochs 30 --batch-size 32 --no-augment
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import json
 import random
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -22,10 +25,11 @@ import soundfile as sf
 import torch
 import torchaudio
 from sklearn.metrics import confusion_matrix
+from sklearn.utils.class_weight import compute_class_weight
 from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, Subset, random_split
 from tqdm import tqdm
 
 MEL_PARAMS: dict[str, int] = {
@@ -53,6 +57,20 @@ TARGET_SPECIES = [
 CLIP_DURATION_S = 5
 EARLY_STOPPING_PATIENCE = 5
 MODEL_FILENAME = "mammal_cnn.pt"
+
+# Drempelwaarden voor augmentatie-strategie (aantal chunks per soort in trainingsset)
+# < AUGMENT_ALWAYS_THRESHOLD  → altijd augmenteren (p=1.0)
+# < AUGMENT_SOMETIMES_THRESHOLD → 50% kans op augmentatie (p=0.5)
+# ≥ AUGMENT_SOMETIMES_THRESHOLD → geen augmentatie (p=0.0)
+AUGMENT_ALWAYS_THRESHOLD: int = 500
+AUGMENT_SOMETIMES_THRESHOLD: int = 2000
+
+# Augmentatie-parameters (SpecAugment maskeringsgrootte)
+FREQ_MASK_PARAM: int = 10   # maximale breedte frequentieband-masker (mel-bins)
+TIME_MASK_PARAM: int = 20   # maximale breedte tijdsband-masker (frames)
+
+# Minimale signaalvermogen bij SNR-berekening (voorkomt deling door nul)
+_MIN_SIGNAL_POWER: float = 1e-9
 
 
 def _species_slug(value: str) -> str:
@@ -143,6 +161,154 @@ class AudioChunkDataset(Dataset[tuple[torch.Tensor, int]]):
         return mel_db, label
 
 
+def _augment_waveform(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
+    """Pas waveform-niveau augmentaties toe: ruis, tijdrekking, toonhoogte en volume."""
+    # VolumeJitter: volume variëren (0.7–1.3x)
+    gain = random.uniform(0.7, 1.3)
+    waveform = waveform * gain
+
+    # AddNoise: Gaussische ruis toevoegen (SNR 20–40 dB)
+    snr_db = random.uniform(20.0, 40.0)
+    signal_power = waveform.pow(2).mean().clamp(min=_MIN_SIGNAL_POWER)
+    noise_power = signal_power / (10 ** (snr_db / 10.0))
+    waveform = waveform + torch.randn_like(waveform) * noise_power.sqrt()
+
+    # PitchShift: toonhoogte licht verschuiven (±2 semitonen)
+    n_steps = random.uniform(-2.0, 2.0)
+    waveform = torchaudio.functional.pitch_shift(waveform, sample_rate, n_steps)
+
+    # TimeStretch: tijdrekking via phase vocoder (behoudt toonhoogte, factor 0.8–1.2)
+    # rate < 1 → langzamer (meer frames), rate > 1 → sneller (minder frames)
+    rate = random.uniform(0.8, 1.2)
+    orig_len = waveform.shape[1]
+    _n_fft = 512
+    _hop = _n_fft // 4
+    _window = torch.hann_window(_n_fft)
+    stft = torch.stft(
+        waveform.squeeze(0),
+        n_fft=_n_fft,
+        hop_length=_hop,
+        window=_window,
+        return_complex=True,
+    ).unsqueeze(0)  # (1, freq_bins, time_frames)
+    n_freq = _n_fft // 2 + 1
+    phase_advance = torch.linspace(0, np.pi * _hop, n_freq)[:, None]
+    stft_stretched = torchaudio.functional.phase_vocoder(stft, rate, phase_advance)
+    target_len = max(1, int(orig_len / rate))
+    waveform = torch.istft(
+        stft_stretched.squeeze(0),
+        n_fft=_n_fft,
+        hop_length=_hop,
+        window=_window,
+        length=target_len,
+    ).unsqueeze(0)
+    if waveform.shape[1] > orig_len:
+        waveform = waveform[:, :orig_len]
+    elif waveform.shape[1] < orig_len:
+        waveform = torch.nn.functional.pad(waveform, (0, orig_len - waveform.shape[1]))
+
+    return waveform
+
+
+def _augment_spectrogram(mel_db: torch.Tensor) -> torch.Tensor:
+    """Pas spectrogram-niveau augmentaties toe: FrequencyMasking en TimeMasking (SpecAugment)."""
+    # FrequencyMasking: blokkeer willekeurige frequentieband
+    freq_mask = torchaudio.transforms.FrequencyMasking(freq_mask_param=FREQ_MASK_PARAM)
+    mel_db = freq_mask(mel_db)
+
+    # TimeMasking: blokkeer willekeurige tijdsband
+    time_mask = torchaudio.transforms.TimeMasking(time_mask_param=TIME_MASK_PARAM)
+    mel_db = time_mask(mel_db)
+
+    return mel_db
+
+
+class AugmentedTrainDataset(Dataset[tuple[torch.Tensor, int]]):
+    """Trainingsset met klasse-gebaseerde data-augmentatie voor zeldzame soorten.
+
+    Zeldzame soorten (< AUGMENT_ALWAYS_THRESHOLD chunks) worden altijd geaugmenteerd,
+    middelgrote soorten (< AUGMENT_SOMETIMES_THRESHOLD) met 50% kans,
+    veelvoorkomende soorten helemaal niet.
+    """
+
+    def __init__(self, subset: Subset, augment: bool = True) -> None:
+        if not isinstance(subset.dataset, AudioChunkDataset):
+            raise TypeError(
+                f"AugmentedTrainDataset verwacht een AudioChunkDataset als basis, "
+                f"maar kreeg: {type(subset.dataset).__name__}"
+            )
+        base_dataset: AudioChunkDataset = subset.dataset
+        self.samples: list[tuple[Path, int]] = [base_dataset.samples[i] for i in subset.indices]
+        self.mel_params = base_dataset.mel_params
+        self.expected_samples = base_dataset.expected_samples
+        self.mel_transform = create_mel_transform(self.mel_params)
+        self.to_db = torchaudio.transforms.AmplitudeToDB(stype="power")
+        self.augment = augment
+
+        # Bepaal augmentatie-kans per klasse op basis van chunk-aantallen
+        class_counts: dict[int, int] = Counter(label for _, label in self.samples)
+        self.aug_prob: dict[int, float] = {}
+        for cls, count in class_counts.items():
+            if count < AUGMENT_ALWAYS_THRESHOLD:
+                self.aug_prob[cls] = 1.0
+            elif count < AUGMENT_SOMETIMES_THRESHOLD:
+                self.aug_prob[cls] = 0.5
+            else:
+                self.aug_prob[cls] = 0.0
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def get_labels(self) -> list[int]:
+        """Geef alle klasse-labels van de trainingssamples terug."""
+        return [label for _, label in self.samples]
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
+        file_path, label = self.samples[index]
+
+        # Audio laden en naar mono omzetten
+        audio, sample_rate = sf.read(str(file_path), dtype="float32")
+        if audio.ndim > 1:
+            audio = np.mean(audio, axis=1)
+        waveform = torch.from_numpy(audio).unsqueeze(0)
+
+        # Hersampling indien samplerate afwijkt
+        if sample_rate != self.mel_params["sample_rate"]:
+            waveform = torchaudio.functional.resample(
+                waveform,
+                orig_freq=sample_rate,
+                new_freq=self.mel_params["sample_rate"],
+            )
+
+        # Clip op gewenste duur
+        length = waveform.shape[1]
+        if length < self.expected_samples:
+            waveform = torch.nn.functional.pad(waveform, (0, self.expected_samples - length))
+        elif length > self.expected_samples:
+            waveform = waveform[:, : self.expected_samples]
+
+        # Waveform-augmentatie toepassen (afhankelijk van klassefrequentie)
+        should_augment = self.augment and random.random() < self.aug_prob.get(label, 0.0)
+        if should_augment:
+            waveform = _augment_waveform(waveform, self.mel_params["sample_rate"])
+            # Opnieuw clippen: tijdrekking kan lengte iets wijzigen
+            length = waveform.shape[1]
+            if length < self.expected_samples:
+                waveform = torch.nn.functional.pad(waveform, (0, self.expected_samples - length))
+            elif length > self.expected_samples:
+                waveform = waveform[:, : self.expected_samples]
+
+        # Mel-spectrogram berekenen
+        mel = self.mel_transform(waveform)
+        mel_db = self.to_db(mel).to(dtype=torch.float32)
+
+        # Spectrogram-augmentaties toepassen (FrequencyMasking, TimeMasking)
+        if should_augment:
+            mel_db = _augment_spectrogram(mel_db)
+
+        return mel_db, label
+
+
 class MammalCNN(nn.Module):
     """Klein CNN-model voor soortclassificatie op mel-spectrogrammen."""
 
@@ -184,7 +350,7 @@ def _set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def _split_dataset(dataset: Dataset[tuple[torch.Tensor, int]]) -> tuple[Dataset, Dataset, Dataset]:
+def _split_dataset(dataset: Dataset[tuple[torch.Tensor, int]]) -> tuple[Subset, Subset, Subset]:
     """Splits dataset in train/val/test met verhouding 70/15/15."""
     total = len(dataset)
     train_size = int(total * 0.70)
@@ -246,6 +412,25 @@ def _run_epoch(
     return epoch_loss, epoch_acc, all_labels, all_preds
 
 
+def _compute_class_weights(
+    labels: list[int], num_classes: int, device: torch.device
+) -> torch.Tensor:
+    """Bereken gebalanceerde klasse-gewichten op basis van klassefrequentie.
+
+    Klassen die niet in de trainingsset voorkomen krijgen gewicht 1.0.
+    """
+    label_array = np.array(labels)
+    present_classes = np.unique(label_array)
+    partial_weights = compute_class_weight("balanced", classes=present_classes, y=label_array)
+
+    # Alle klassen op 1.0 initialiseren; ontbrekende klassen missen in de trainingsset
+    weights = np.ones(num_classes, dtype=np.float32)
+    for cls, w in zip(present_classes, partial_weights):
+        weights[int(cls)] = float(w)
+
+    return torch.tensor(weights, dtype=torch.float32, device=device)
+
+
 def train_model(
     model: nn.Module,
     train_loader: DataLoader,
@@ -253,9 +438,10 @@ def train_model(
     epochs: int,
     device: torch.device,
     learning_rate: float = 0.001,
+    class_weights: torch.Tensor | None = None,
 ) -> tuple[nn.Module, float]:
     """Train model met early stopping en ReduceLROnPlateau."""
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = Adam(model.parameters(), lr=learning_rate)
     scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=2)
 
@@ -374,6 +560,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--num-workers", type=int, default=0, help="Aantal DataLoader workers")
+    parser.add_argument(
+        "--augment",
+        dest="augment",
+        action="store_true",
+        default=True,
+        help="Data-augmentatie voor zeldzame soorten inschakelen (standaard aan)",
+    )
+    parser.add_argument(
+        "--no-augment",
+        dest="augment",
+        action="store_false",
+        help="Data-augmentatie uitschakelen",
+    )
     return parser.parse_args()
 
 
@@ -384,6 +583,7 @@ def main() -> None:
     data_path = Path(args.data)
     output_dir = Path(args.output)
     species_file = Path(args.species_file)
+    device = torch.device("cpu")
 
     if not data_path.exists():
         print(f"Indexbestand niet gevonden: {data_path}", file=sys.stderr)
@@ -399,8 +599,13 @@ def main() -> None:
         print("Dataset te klein voor train/val/test split.", file=sys.stderr)
         sys.exit(1)
 
+    # Trainingsset inpakken met augmentatie en klasse-gewichten berekenen
+    augmented_train = AugmentedTrainDataset(train_set, augment=args.augment)
+    class_weights = _compute_class_weights(augmented_train.get_labels(), len(class_to_idx), device=device)
+    print("Data-augmentatie:", "ingeschakeld" if args.augment else "uitgeschakeld")
+
     train_loader = DataLoader(
-        train_set,
+        augmented_train,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
@@ -418,7 +623,6 @@ def main() -> None:
         num_workers=args.num_workers,
     )
 
-    device = torch.device("cpu")
     model = MammalCNN(num_classes=len(class_to_idx)).to(device)
 
     model, best_val_acc = train_model(
@@ -427,6 +631,7 @@ def main() -> None:
         val_loader=val_loader,
         epochs=args.epochs,
         device=device,
+        class_weights=class_weights.to(device),
     )
 
     cm, per_species_acc, test_acc = evaluate_model(model, test_loader, idx_to_class, device)
