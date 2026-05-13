@@ -415,12 +415,49 @@ class TestMQTTPublisher:
         mock_client.publish.return_value = MagicMock(rc=0)
         publisher._publish_ha_discovery(mock_client)
 
-        mock_client.publish.assert_called_once()
-        call_args = mock_client.publish.call_args
-        config = json.loads(call_args[0][1])
+        assert mock_client.publish.call_count == 2
+        first_call = mock_client.publish.call_args_list[0]
+        config = json.loads(first_call[0][1])
         assert "state_topic" in config
         assert "device" in config
         assert config["device"]["manufacturer"] == "natuurwaarnemer"
+
+        pending_call = mock_client.publish.call_args_list[1]
+        assert (
+            pending_call[0][0]
+            == "homeassistant/sensor/mammal_watcher_pending/config"
+        )
+        pending_config = json.loads(pending_call[0][1])
+        assert pending_config["state_topic"] == "mammal/pending"
+
+    def test_publish_pending_payload_format(self) -> None:
+        """publish_pending() moet een geldig JSON-payload sturen via pending topic."""
+        from mqtt_publisher import MQTTPublisher
+
+        publisher = MQTTPublisher(
+            broker="localhost",
+            topic_pending="mammal/pending",
+        )
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.rc = 0
+        mock_client.publish.return_value = mock_result
+        publisher._client = mock_client
+        publisher._connected = True
+
+        payload = {
+            "species_scientific": "meles_meles",
+            "species_nl": "das",
+            "review_status": "needs_review",
+            "review_message": "Mogelijk das — ter beoordeling",
+        }
+        publisher.publish_pending(payload)
+
+        mock_client.publish.assert_called_once()
+        call_args = mock_client.publish.call_args
+        assert call_args[0][0] == "mammal/pending"
+        parsed = json.loads(call_args[0][1])
+        assert parsed["review_status"] == "needs_review"
 
 
 # ---------------------------------------------------------------------------

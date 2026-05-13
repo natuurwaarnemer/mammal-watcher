@@ -30,6 +30,7 @@ import yaml
 import soundfile as sf
 
 from classifier import BaseClassifier, StubClassifier, YAMNetClassifier
+from feedback_collector import FeedbackCollector
 
 __version__ = "0.2.0"
 
@@ -293,6 +294,14 @@ def main() -> None:
         uncertain_threshold=clips_cfg.get("uncertain_threshold", 0.5),
         max_clips_per_day=clips_cfg.get("max_clips_per_day", 500),
     )
+    feedback_cfg = cfg.get("feedback", {})
+    feedback_collector = FeedbackCollector(
+        enabled=feedback_cfg.get("enabled", True),
+        feedback_dir=feedback_cfg.get("feedback_dir", "./feedback"),
+        pending_species=feedback_cfg.get("pending_species"),
+        min_pending_confidence=feedback_cfg.get("min_pending_confidence", 0.40),
+        active_min_confidence=min_confidence,
+    )
 
     n8n_cfg = cfg.get("n8n", {})
     n8n_enabled: bool = n8n_cfg.get("enabled", False)
@@ -316,6 +325,7 @@ def main() -> None:
             username=mqtt_cfg.get("username"),
             password=mqtt_cfg.get("password"),
             topic_detections=mqtt_cfg.get("topic_detections", "mammal/detection"),
+            topic_pending=mqtt_cfg.get("topic_pending", "mammal/pending"),
             topic_status=mqtt_cfg.get("topic_status", "mammal/status"),
             ha_discovery=mqtt_cfg.get("ha_discovery", True),
         )
@@ -344,8 +354,12 @@ def main() -> None:
         if not prediction:
             return
 
+        species_scientific = str(prediction.get("species_scientific", ""))
         confidence = prediction.get("confidence", 0.0)
-        if confidence < min_confidence:
+        min_required_confidence = feedback_collector.get_min_confidence(
+            species_scientific
+        )
+        if confidence < min_required_confidence:
             return
 
         if confidence >= tier1_threshold:
@@ -358,6 +372,26 @@ def main() -> None:
         payload = build_payload(
             rtsp_url, audio, sr, prediction, species_index, timestamp=ts
         )
+
+        if feedback_collector.is_pending(payload["species_scientific"]):
+            species_label = payload["species_nl"] or payload["species_scientific"]
+            payload["review_status"] = "needs_review"
+            payload["review_message"] = (
+                f"Mogelijk {species_label} — ter beoordeling"
+            )
+            feedback_collector.save_pending(audio, sr, payload)
+            logger.info(
+                "PENDING: mogelijk %s (%s) conf=%.2f — opgeslagen ter beoordeling",
+                species_label,
+                payload["species_scientific"],
+                confidence,
+            )
+            if args.dry_run:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            elif publisher is not None:
+                publisher.publish_pending(payload)
+            return
+
         clip_saver.save(audio, sr, payload)
 
         logger.info(

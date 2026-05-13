@@ -29,8 +29,20 @@ mqtt:
   username: birdnet
   password: secret
   topic_detections: mammal/detection
+  topic_pending: mammal/pending
   topic_status: mammal/status
   ha_discovery: true
+
+feedback:
+  enabled: true
+  feedback_dir: ./feedback
+  pending_species:
+    - meles_meles      # das — 20 samples
+    - martes_martes    # boommarter — 30 samples
+    - martes_foina     # steenmarter — 67 samples
+    - lynx_lynx        # lynx — 49 samples
+  min_pending_confidence: 0.40
+  retrain_threshold: 50
 
 n8n:
   enabled: false
