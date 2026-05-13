@@ -50,3 +50,13 @@ services:
       - ./feedback:/app/feedback
     environment:
       - PYTHONUNBUFFERED=1
+
+  mammalradar-web:
+    image: nginx:alpine
+    container_name: mammalradar-web
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro

@@ -1,6 +1,6 @@
-# 🌿 WildEar
+# 🐾 MammalRadar
 
-**Wildlife detection through sound, from field to insight**
+**Every sound is a signal.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
@@ -8,18 +8,18 @@
 
 ---
 
-It started as a personal challenge: train a model that recognises mammals by their sound. But why stop at detection? WildEar grew into a complete open-source ecosystem — from a cheap field device to ecological AI — accessible to anyone, anywhere in the world. For less than the cost of a day out, you can deploy a self-learning wildlife listening station that connects the forest to the cloud.
+It started as a personal challenge: train a model that recognises mammals by their sound. But why stop at detection? MammalRadar grew into a complete open-source ecosystem — from a cheap field device to ecological AI — accessible to anyone, anywhere in the world. For less than the cost of a day out, you can deploy a self-learning wildlife listening station that connects the forest to the cloud.
 
 ---
 
-## Why WildEar?
+## Why MammalRadar?
 
 | Solution | Cost | AI | Species | Open? |
 |---|---|---|---|---|
 | Rainforest Connection | High | ✅ | Tropical | ❌ Commercial |
 | BirdNET-Go | Low | ✅ | Birds only | ✅ |
 | AudioMoth | Low | ❌ Record only | All | ✅ |
-| **WildEar** | **~€25** | **✅ Self-learning** | **All wildlife 🌍** | **✅ Open source** |
+| **MammalRadar** | **~€25** | **✅ Self-learning** | **All wildlife 🌍** | **✅ Open source** |
 
 **Low-cost philosophy:**
 
@@ -33,7 +33,7 @@ It started as a personal challenge: train a model that recognises mammals by the
 
 ## System Overview
 
-WildEar is more than a detector. It is a layered ecosystem where cheap hardware, edge AI, cloud intelligence, and ecological knowledge reinforce each other.
+MammalRadar is more than a detector. It is a layered ecosystem where cheap hardware, edge AI, cloud intelligence, and ecological knowledge reinforce each other.
 
 ### 🧱 Hardware (field device)
 
@@ -103,7 +103,7 @@ This keeps monthly data costs at roughly **9 MB** for a typical deployment — w
 
 ## Intelligence Layers
 
-WildEar becomes smarter over time through four reinforcing loops:
+MammalRadar becomes smarter over time through four reinforcing loops:
 
 1. **Data-driven** — every new audio clip feeds back into retraining
 2. **Context-driven** — time of day, season, habitat, weather, and GBIF presence data all influence scoring
@@ -152,13 +152,13 @@ This setup proves the full pipeline end-to-end and drives the first training dat
 - 🧒 Schools & education
 - 🌍 Anyone, anywhere in the world
 
-If you can solder a microphone and run a Docker container, you can deploy WildEar.
+If you can solder a microphone and run a Docker container, you can deploy MammalRadar.
 
 ---
 
 ## Contributing
 
-WildEar is open and welcoming. Whether you improve the model, add a new species dataset, build a better field enclosure, or translate the dashboard — every contribution matters. Open an issue to start a conversation, or submit a pull request directly.
+MammalRadar is open and welcoming. Whether you improve the model, add a new species dataset, build a better field enclosure, or translate the dashboard — every contribution matters. Open an issue to start a conversation, or submit a pull request directly.
 
 No contribution is too small. The goal is to make wildlife monitoring accessible to everyone.
 
@@ -172,7 +172,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-WildEar builds on the shoulders of great open-source projects:
+MammalRadar builds on the shoulders of great open-source projects:
 
 - [Sukecz/esp32-birdnet-mic](https://github.com/Sukecz/esp32-birdnet-mic) 
   — ESP32 I2S RTSP microphone firmware ← de man die het startte! 🎤
@@ -312,4 +312,4 @@ This is **harmless**. The ESP32 sends 1460-byte RTP packets; MediaMTX automatica
 
 ## Voor Nederlandstalige gebruikers
 
-WildEar is een volledig open-source ecosysteem voor akoestische wildlife monitoring — van een goedkoop veldkastje (±€25) tot zelflerend AI-model. Het project begon als een persoonlijke uitdaging om zoogdieren te herkennen aan hun geluid, en groeide uit tot een complete oplossing die iedereen — van boswachter tot scholier — kan inzetten om wildlife te monitoren, overal ter wereld.
+MammalRadar is een volledig open-source ecosysteem voor akoestische wildlife monitoring — van een goedkoop veldkastje (±€25) tot zelflerend AI-model. Het project begon als een persoonlijke uitdaging om zoogdieren te herkennen aan hun geluid, en groeide uit tot een complete oplossing die iedereen — van boswachter tot scholier — kan inzetten om wildlife te monitoren, overal ter wereld.
