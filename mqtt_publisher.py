@@ -33,6 +33,8 @@ class MQTTPublisher:
         MQTT-topic voor detectie-payloads.
     topic_status:
         MQTT-topic voor service-status (LWT).
+    topic_pending:
+        MQTT-topic voor pending detecties ter beoordeling.
     ha_discovery:
         Publiceert HA MQTT-discovery config bij verbinding.
     """
@@ -44,6 +46,7 @@ class MQTTPublisher:
         username: str | None = None,
         password: str | None = None,
         topic_detections: str = "mammal/detection",
+        topic_pending: str = "mammal/pending",
         topic_status: str = "mammal/status",
         ha_discovery: bool = True,
     ) -> None:
@@ -52,6 +55,7 @@ class MQTTPublisher:
         self._username = username
         self._password = password
         self._topic_detections = topic_detections
+        self._topic_pending = topic_pending
         self._topic_status = topic_status
         self._ha_discovery = ha_discovery
         self._client: Any = None
@@ -110,10 +114,10 @@ class MQTTPublisher:
 
     def _publish_ha_discovery(self, client: Any) -> None:
         """Publiceert Home Assistant MQTT-discovery configuratie."""
-        discovery_topic = (
+        detection_discovery_topic = (
             "homeassistant/sensor/mammal_watcher_last_detection/config"
         )
-        config = {
+        detection_config = {
             "name": "Mammal Watcher Last Detection",
             "state_topic": self._topic_detections,
             "value_template": "{{ value_json.species_nl }}",
@@ -128,7 +132,34 @@ class MQTTPublisher:
             },
         }
         client.publish(
-            discovery_topic, json.dumps(config), qos=1, retain=True
+            detection_discovery_topic,
+            json.dumps(detection_config),
+            qos=1,
+            retain=True,
+        )
+
+        pending_discovery_topic = (
+            "homeassistant/sensor/mammal_watcher_pending/config"
+        )
+        pending_config = {
+            "name": "Mammal Watcher Pending",
+            "state_topic": self._topic_pending,
+            "value_template": "{{ value_json.review_message }}",
+            "json_attributes_topic": self._topic_pending,
+            "unique_id": "mammal_watcher_pending",
+            "device": {
+                "identifiers": ["mammal_watcher"],
+                "name": "Mammal Watcher",
+                "manufacturer": "natuurwaarnemer",
+                "model": "mammal-watcher",
+                "sw_version": __version__,
+            },
+        }
+        client.publish(
+            pending_discovery_topic,
+            json.dumps(pending_config),
+            qos=1,
+            retain=True,
         )
         logger.debug("HA discovery config gepubliceerd")
 
@@ -142,6 +173,15 @@ class MQTTPublisher:
             self._topic_detections, msg, qos=1, retain=False
         )
         logger.debug("MQTT publicatie resultaat: %s", result.rc)
+
+    def publish_pending(self, payload: dict[str, Any]) -> None:
+        """Publiceer een pending payload naar het pending-topic."""
+        if self._client is None or not self._connected:
+            logger.warning("MQTT niet verbonden, pending publicatie overgeslagen")
+            return
+        msg = json.dumps(payload, ensure_ascii=False)
+        result = self._client.publish(self._topic_pending, msg, qos=1, retain=False)
+        logger.debug("MQTT pending publicatie resultaat: %s", result.rc)
 
     def disconnect(self) -> None:
         """Verbreek de verbinding met de MQTT-broker."""

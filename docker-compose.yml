@@ -47,5 +47,6 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./species_mammals_nl.csv:/app/species_mammals_nl.csv:ro
+      - ./feedback:/app/feedback
     environment:
       - PYTHONUNBUFFERED=1

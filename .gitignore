@@ -22,6 +22,10 @@ env/
 *.flac
 *.mp3
 *.ogg
+feedback/needs_review/
+feedback/confirmed/
+feedback/rejected/
+clips/index.jsonl
 
 # Data en modellen
 data/
