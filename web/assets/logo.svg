@@ -1,8 +1,62 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="MammalRadar placeholder logo">
-  <rect width="512" height="512" fill="#0a0a0a"/>
-  <circle cx="256" cy="256" r="200" fill="none" stroke="#00ff88" stroke-width="12" opacity="0.3"/>
-  <circle cx="256" cy="256" r="145" fill="none" stroke="#00ff88" stroke-width="10" opacity="0.55"/>
-  <circle cx="256" cy="256" r="90" fill="none" stroke="#00ff88" stroke-width="8" opacity="0.8"/>
-  <line x1="256" y1="256" x2="400" y2="156" stroke="#00ff88" stroke-width="12" stroke-linecap="round"/>
-  <circle cx="256" cy="256" r="15" fill="#00ff88"/>
+<svg width="512" height="512" viewBox="0 0 512 512"
+     xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#02040A"/>
+
+  <!-- Radar circle -->
+  <circle cx="256" cy="256" r="180" fill="#02040A" stroke="#1aff7a" stroke-width="6"/>
+
+  <!-- Radar rings -->
+  <circle cx="256" cy="256" r="120" fill="none" stroke="#1aff7a" stroke-width="3" opacity="0.7"/>
+  <circle cx="256" cy="256" r="60"  fill="none" stroke="#1aff7a" stroke-width="2" opacity="0.5"/>
+
+  <!-- Crosshair lines -->
+  <line x1="256" y1="96"  x2="256" y2="416" stroke="#1aff7a" stroke-width="2" opacity="0.4"/>
+  <line x1="96"  y1="256" x2="416" y2="256" stroke="#1aff7a" stroke-width="2" opacity="0.4"/>
+
+  <!-- Radar sweep wedge -->
+  <defs>
+    <radialGradient id="sweepGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1aff7a" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#1aff7a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="
+    M256,256
+    L120,340
+    A180,180 0 0,0 340,120
+    Z"
+    fill="url(#sweepGrad)" opacity="0.9"/>
+
+  <!-- Badger silhouette (minimal, stylized) -->
+  <g transform="translate(0,-10)">
+    <!-- Body -->
+    <path d="
+      M170,280
+      C190,250 230,235 270,238
+      C305,240 335,255 350,275
+      C340,295 320,310 295,318
+      C260,330 220,330 190,320
+      C180,310 172,295 170,280 Z"
+      fill="#02040A" stroke="#02040A" stroke-width="4"/>
+
+    <!-- Head -->
+    <path d="
+      M270,238
+      C295,225 320,225 340,235
+      C350,245 355,258 352,270
+      C335,270 315,268 295,268
+      C285,262 278,250 270,238 Z"
+      fill="#02040A" stroke="#02040A" stroke-width="4"/>
+
+    <!-- Snout highlight (subtiel) -->
+    <path d="
+      M320,244
+      C330,244 338,248 343,255
+      C338,255 332,254 326,253 Z"
+      fill="#0f1724" opacity="0.7"/>
+
+    <!-- Ear -->
+    <circle cx="300" cy="232" r="8" fill="#02040A"/>
+  </g>
 </svg>
