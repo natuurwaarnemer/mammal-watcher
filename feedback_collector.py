@@ -140,6 +140,13 @@ class FeedbackCollector:
         if source_sidecar.exists():
             shutil.move(str(source_sidecar), str(target_clip.with_suffix(".json")))
 
-        if clip.is_relative_to(self.needs_review_dir) and self._pending_counts[species] > 0:
+        from_needs_review = False
+        try:
+            clip.relative_to(self.needs_review_dir)
+            from_needs_review = True
+        except ValueError:
+            from_needs_review = False
+
+        if from_needs_review and self._pending_counts[species] > 0:
             self._pending_counts[species] -= 1
         return str(target_clip)
