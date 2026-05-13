@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MammalRadar</title>
+    <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+    <style>
+      :root {
+        --bg: #02040A;
+        --surface: #0d0f14;
+        --line: #1a1f1a;
+        --text: #e8e8e8;
+        --muted: #9aa09b;
+        --accent: #1aff7a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(circle at top, #111 0%, var(--bg) 45%);
+        color: var(--text);
+      }
+
+      .page {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 3rem 1.25rem 2rem;
+      }
+
+      .hero {
+        text-align: center;
+      }
+
+      .logo {
+        width: 112px;
+        height: 112px;
+        border-radius: 50%;
+        border: 1px solid #1e1e1e;
+        background: #050505;
+        padding: 0.5rem;
+      }
+
+      h1 {
+        margin: 1rem 0 0.25rem;
+        font-size: clamp(2rem, 6vw, 3.3rem);
+        letter-spacing: 0.02em;
+      }
+
+      .tagline {
+        margin: 0;
+        color: var(--accent);
+        font-size: clamp(1.05rem, 3.5vw, 1.4rem);
+        font-weight: 600;
+      }
+
+      .intro {
+        max-width: 700px;
+        margin: 1.5rem auto 2rem;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .status {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.9rem;
+      }
+
+      .card {
+        background: linear-gradient(180deg, #131313 0%, var(--surface) 100%);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1rem;
+      }
+
+      .card h2 {
+        margin: 0 0 0.5rem;
+        font-size: 1.05rem;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      footer {
+        margin-top: 2rem;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      @media (max-width: 760px) {
+        .page {
+          padding-top: 2.25rem;
+        }
+
+        .status {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <img class="logo" src="assets/logo.svg" alt="MammalRadar" />
+        <h1>MammalRadar</h1>
+        <p class="tagline">Every sound is a signal.</p>
+        <p class="intro">
+          MammalRadar brengt AI-gebaseerde zoogdierdetectie via geluid naar iedereen die natuur wil monitoren. Het project is open source en gebouwd
+          om van veldopstelling tot dashboard schaalbaar te blijven. Zo wordt elke opname een bruikbaar signaal voor onderzoek en bescherming.
+        </p>
+      </section>
+
+      <section class="status" aria-label="Status">
+        <article class="card">
+          <h2>🎙️ Luistert</h2>
+          <p>24/7 audio monitoring.</p>
+        </article>
+        <article class="card">
+          <h2>🧠 Analyseert</h2>
+          <p>AI herkent zoogdieren aan hun geluid.</p>
+        </article>
+        <article class="card">
+          <h2>📡 Rapporteert</h2>
+          <p>Detecties naar Home Assistant &amp; MQTT.</p>
+        </article>
+      </section>
+
+      <footer>Open source &middot; MIT License &middot; github.com/natuurwaarnemer/mammal-watcher</footer>
+    </main>
+  </body>
+</html>
