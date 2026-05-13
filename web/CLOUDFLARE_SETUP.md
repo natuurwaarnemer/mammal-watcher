@@ -3,7 +3,7 @@
 ## Stap 1 — Voeg toe aan bestaande tunnel
 
 1. Ga naar dash.cloudflare.com → Zero Trust → Networks → Tunnels
-2. Klik op de bestaande tunnel (n8n-natuurwaarnemer of maak nieuw aan)
+2. Klik op je bestaande tunnel (of maak een nieuwe aan)
 3. Ga naar "Public Hostname" → "Add a public hostname"
 4. Vul in:
    - Subdomain: (leeg, of www)
