@@ -185,20 +185,22 @@ def _move_clip_and_sidecar(
     destination_species: str | None = None,
     metadata_updates: dict[str, Any] | None = None,
 ) -> Path:
-    species = _species_slug(destination_species or clip.parent.name)
-    target_dir = destination_root / species
-    target_dir = target_dir.resolve()
     try:
-        target_dir.relative_to(destination_root)
+        clip.relative_to(NEEDS_REVIEW_DIR)
     except ValueError as exc:
         raise HTTPException(status_code=403, detail="Verboden pad") from exc
+
+    species = _species_slug(destination_species or clip.parent.name)
+    clip_name = _safe_relative_parts(clip.name)[0]
+    target = _resolve_relative_path(destination_root, f"{species}/{clip_name}")
+    target_dir = target.parent
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / clip.name
     shutil.move(str(clip), str(target))
 
     sidecar = clip.with_suffix(".json")
     if sidecar.exists():
-        sidecar_target = target.with_suffix(".json")
+        sidecar_name = Path(clip_name).with_suffix(".json").name
+        sidecar_target = _resolve_relative_path(destination_root, f"{species}/{sidecar_name}")
         shutil.move(str(sidecar), str(sidecar_target))
         try:
             with open(sidecar_target, encoding="utf-8") as fh:
