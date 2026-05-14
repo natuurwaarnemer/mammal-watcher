@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MammalRadar Review</title>
+    <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+    <style>
+      :root {
+        --bg: #02040a;
+        --surface: #0d0f14;
+        --line: #1a1f1a;
+        --text: #e8e8e8;
+        --muted: #9aa09b;
+        --accent: #1aff7a;
+        --danger: #ff4d4f;
+        --warn: #ffb347;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(circle at top, #111 0%, var(--bg) 45%);
+        color: var(--text);
+      }
+      .page { max-width: 1000px; margin: 0 auto; padding: 1.5rem 1rem 2rem; }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      .brand { display: flex; align-items: center; gap: 0.75rem; font-weight: 700; }
+      .logo {
+        width: 40px; height: 40px; border-radius: 50%;
+        border: 1px solid #1e1e1e; background: #050505; padding: 0.2rem;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+        margin-left: 0.8rem;
+        padding-bottom: 0.2rem;
+      }
+      nav a.active { color: var(--accent); border-bottom: 1px solid var(--accent); }
+
+      .stats {
+        background: linear-gradient(180deg, #131313 0%, var(--surface) 100%);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        margin-bottom: 1rem;
+      }
+      .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+      .tab {
+        border: 1px solid var(--line);
+        background: #11151e;
+        color: var(--text);
+        border-radius: 999px;
+        padding: 0.45rem 0.9rem;
+        cursor: pointer;
+      }
+      .tab.active { border-color: var(--accent); color: var(--accent); }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 0.9rem;
+      }
+      .card {
+        background: linear-gradient(180deg, #131313 0%, var(--surface) 100%);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 0.9rem;
+        transition: transform 0.2s ease, opacity 0.2s ease;
+      }
+      .card.done { opacity: 0.3; transform: scale(0.98); }
+      .meta { color: var(--muted); font-size: 0.9rem; margin-top: 0.2rem; }
+      .badge {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 0.2rem 0.6rem;
+        font-size: 0.82rem;
+        margin-top: 0.5rem;
+      }
+      .badge.high { background: rgba(26, 255, 122, 0.18); color: var(--accent); }
+      .badge.mid { background: rgba(255, 179, 71, 0.18); color: var(--warn); }
+      .badge.low { background: rgba(255, 77, 79, 0.18); color: var(--danger); }
+      audio { width: 100%; margin-top: 0.8rem; }
+      .actions { display: flex; gap: 0.5rem; margin-top: 0.8rem; }
+      .btn {
+        border: 0;
+        border-radius: 10px;
+        padding: 0.5rem 0.7rem;
+        cursor: pointer;
+        color: #fff;
+        font-weight: 600;
+      }
+      .btn.ok { background: #138a4a; }
+      .btn.no { background: #c23234; }
+      .empty {
+        text-align: center;
+        color: var(--muted);
+        padding: 2rem 0.5rem;
+      }
+      @media (max-width: 640px) {
+        .topbar { align-items: flex-start; flex-direction: column; }
+        nav a { margin-left: 0; margin-right: 0.8rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="topbar">
+        <div class="brand">
+          <img class="logo" src="assets/logo.svg" alt="MammalRadar" />
+          <span>MammalRadar</span>
+        </div>
+        <nav>
+          <a href="/">Home</a>
+          <a class="active" href="/review">Review</a>
+        </nav>
+      </header>
+
+      <section class="stats" id="stats">0 te beoordelen | 0 bevestigd | 0 afgewezen</section>
+
+      <section class="tabs">
+        <button class="tab active" data-filter="all">Alle</button>
+        <button class="tab" data-filter="needs_review">Ter beoordeling</button>
+        <button class="tab" data-filter="confirmed">Bevestigd</button>
+      </section>
+
+      <section id="cards" class="grid"></section>
+      <div id="empty" class="empty" hidden>Geen detecties ter beoordeling 🎉</div>
+    </main>
+
+    <script>
+      const cardsEl = document.getElementById("cards");
+      const emptyEl = document.getElementById("empty");
+      const statsEl = document.getElementById("stats");
+      const tabs = [...document.querySelectorAll(".tab")];
+      let currentFilter = "all";
+      let detections = [];
+
+      const fmtDate = (value) => {
+        const dt = new Date(value);
+        return Number.isNaN(dt.getTime()) ? value || "onbekend" : dt.toLocaleString("nl-NL");
+      };
+
+      const confidenceClass = (score) => {
+        if (score > 0.7) return "high";
+        if (score >= 0.4) return "mid";
+        return "low";
+      };
+
+      const filteredDetections = () => {
+        if (currentFilter === "needs_review") {
+          return detections.filter((item) => item.source === "needs_review");
+        }
+        if (currentFilter === "confirmed") {
+          return detections.filter(
+            (item) => item.source === "clips" || item.review_status === "confirmed"
+          );
+        }
+        return detections;
+      };
+
+      const render = () => {
+        const rows = filteredDetections();
+        cardsEl.innerHTML = "";
+        if (!rows.length) {
+          emptyEl.hidden = false;
+          return;
+        }
+        emptyEl.hidden = true;
+        rows.forEach((item, idx) => {
+          const scientific = item.species_scientific || "Onbekend";
+          const nl = item.species_nl || scientific;
+          const confidence = Number(item.confidence || 0);
+          const card = document.createElement("article");
+          card.className = "card";
+          card.innerHTML = `
+            <h3>${nl}</h3>
+            <div class="meta"><em>${scientific}</em></div>
+            <span class="badge ${confidenceClass(confidence)}">confidence ${confidence.toFixed(2)}</span>
+            <div class="meta">${fmtDate(item.timestamp)}</div>
+            <audio controls preload="none" src="${item.audio_url || ""}"></audio>
+            <div class="actions">
+              <button class="btn ok" ${item.source !== "needs_review" ? "disabled" : ""}>✅ Correct</button>
+              <button class="btn no" ${item.source !== "needs_review" ? "disabled" : ""}>❌ False positive</button>
+            </div>
+          `;
+
+          const [confirmBtn, rejectBtn] = card.querySelectorAll(".btn");
+          confirmBtn?.addEventListener("click", () => review(item, "confirm", card, idx));
+          rejectBtn?.addEventListener("click", () => review(item, "reject", card, idx));
+          cardsEl.appendChild(card);
+        });
+      };
+
+      const review = async (item, action, card) => {
+        try {
+          const resp = await fetch(`/api/${action}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ clip_path: item.clip_path }),
+          });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          card.classList.add("done");
+          setTimeout(async () => {
+            detections = detections.filter((row) => row.clip_path !== item.clip_path);
+            render();
+            await loadStats();
+          }, 1000);
+        } catch (error) {
+          console.error(error);
+          alert("Actie mislukt, probeer opnieuw.");
+        }
+      };
+
+      const loadStats = async () => {
+        const resp = await fetch("/api/stats");
+        const data = await resp.json();
+        statsEl.textContent = `${data.needs_review || 0} te beoordelen | ${data.confirmed || 0} bevestigd | ${data.rejected || 0} afgewezen`;
+      };
+
+      const loadDetections = async () => {
+        const resp = await fetch("/api/detections?limit=100");
+        detections = await resp.json();
+        render();
+      };
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          tabs.forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+          currentFilter = tab.dataset.filter;
+          render();
+        });
+      });
+
+      Promise.all([loadStats(), loadDetections()]).catch((error) => {
+        console.error(error);
+        emptyEl.hidden = false;
+        emptyEl.textContent = "API niet bereikbaar.";
+      });
+    </script>
+  </body>
+</html>

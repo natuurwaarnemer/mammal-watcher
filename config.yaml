@@ -9,7 +9,8 @@ audio:
   hop_seconds: 5.0
 
 classifier:
-  model: yamnet
+  model: mammal_cnn
+  model_path: /app/models/mammal_cnn.pt
   min_confidence: 0.4
   tier1_threshold: 0.75
   tier2_threshold: 0.5
