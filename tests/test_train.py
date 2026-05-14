@@ -223,3 +223,77 @@ def test_parse_args_no_augment_flag() -> None:
         _sys.argv = orig_argv
 
     assert args.augment is False
+
+
+def test_dataset_respects_max_per_species(tmp_path: Path) -> None:
+    _ = pytest.importorskip("torch")
+    _ = pytest.importorskip("torchaudio")
+    module = _load_module()
+
+    rows = [
+        ("wolf1.wav", "Canis lupus", "wolf"),
+        ("wolf2.wav", "Canis lupus", "wolf"),
+        ("wolf3.wav", "Canis lupus", "wolf"),
+        ("vos1.wav", "Vulpes vulpes", "vos"),
+    ]
+    for index, (name, _, _) in enumerate(rows):
+        audio_path = tmp_path / name
+        waveform = np.random.default_rng(index).normal(0, 0.1, 16000).astype(np.float32)
+        sf.write(str(audio_path), waveform, 16000)
+
+    index_path = tmp_path / "index.csv"
+    with index_path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=["file", "species_scientific", "species_nl", "duration_s", "source"],
+        )
+        writer.writeheader()
+        for name, scientific, nl_name in rows:
+            writer.writerow(
+                {
+                    "file": str(tmp_path / name),
+                    "species_scientific": scientific,
+                    "species_nl": nl_name,
+                    "duration_s": 1,
+                    "source": "gbif",
+                }
+            )
+
+    dataset = module.AudioChunkDataset(
+        index_csv=index_path,
+        class_to_idx={"canis_lupus": 0, "vulpes_vulpes": 1},
+        mel_params=module.MEL_PARAMS,
+        max_per_species=2,
+        seed=123,
+    )
+
+    assert len(dataset) == 3
+    assert dataset.samples_per_species == {"canis_lupus": 2, "vulpes_vulpes": 1}
+
+
+def test_save_model_persists_training_info(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    _ = pytest.importorskip("torchaudio")
+    module = _load_module()
+
+    model = module.MammalCNN(num_classes=2)
+    training_info = {
+        "samples_per_species": {"canis_lupus": 2},
+        "total_samples": 2,
+        "max_per_species": 1000,
+        "clip_duration_s": 10,
+        "trained_at": "2026-05-14T12:00:00+00:00",
+    }
+
+    model_path = module.save_model(
+        model=model,
+        output_dir=tmp_path,
+        class_mapping={0: "canis_lupus", 1: "vulpes_vulpes"},
+        mel_params=module.MEL_PARAMS,
+        val_accuracy=0.75,
+        training_info=training_info,
+    )
+
+    checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+    assert checkpoint["training_info"] == training_info
+    assert checkpoint["val_accuracy"] == pytest.approx(0.75)

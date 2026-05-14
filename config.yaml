@@ -5,13 +5,13 @@ rtsp:
 
 audio:
   target_sample_rate: 48000
-  window_seconds: 5.0
-  hop_seconds: 5.0
+  window_seconds: 10.0
+  hop_seconds: 10.0
 
 classifier:
   model: mammal_cnn
   model_path: /app/models/mammal_cnn.pt
-  min_confidence: 0.4
+  min_confidence: 0.65
   tier1_threshold: 0.75
   tier2_threshold: 0.5
   yamnet_min_score: 0.1

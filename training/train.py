@@ -1,5 +1,5 @@
 """
-Train een compact CNN-model op 5s WAV-chunks uit index.csv.
+Train een compact CNN-model op 10s WAV-chunks uit index.csv.
 
 Gebruik:
 python training/train.py --data /mnt/usb/prepared/index.csv --output models/ --epochs 30 --batch-size 32
@@ -17,6 +17,7 @@ import random
 import re
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +55,7 @@ TARGET_SPECIES = [
     "lynx_lynx",
 ]
 
-CLIP_DURATION_S = 5
+CLIP_DURATION_S = 10
 EARLY_STOPPING_PATIENCE = 5
 MODEL_FILENAME = "mammal_cnn.pt"
 
@@ -112,13 +113,24 @@ def load_class_mapping(species_file: Path) -> tuple[dict[str, int], dict[int, st
 class AudioChunkDataset(Dataset[tuple[torch.Tensor, int]]):
     """Dataset die WAV-chunks uit index.csv leest en omzet naar mel-spectrogrammen."""
 
-    def __init__(self, index_csv: Path, class_to_idx: dict[str, int], mel_params: dict[str, int]) -> None:
+    def __init__(
+        self,
+        index_csv: Path,
+        class_to_idx: dict[str, int],
+        mel_params: dict[str, int],
+        *,
+        max_per_species: int | None = None,
+        seed: int = 42,
+    ) -> None:
         self.class_to_idx = class_to_idx
         self.mel_params = mel_params
         self.expected_samples = mel_params["sample_rate"] * CLIP_DURATION_S
         self.mel_transform = create_mel_transform(mel_params)
         self.to_db = torchaudio.transforms.AmplitudeToDB(stype="power")
         self.samples: list[tuple[Path, int]] = []
+        self.samples_per_species: dict[str, int] = {}
+        self.max_per_species = max_per_species
+        sampled_by_species: dict[str, list[tuple[Path, int]]] = {}
 
         with index_csv.open(newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
@@ -127,7 +139,18 @@ class AudioChunkDataset(Dataset[tuple[torch.Tensor, int]]):
                 if species not in self.class_to_idx:
                     continue
                 file_path = Path(row["file"])
-                self.samples.append((file_path, self.class_to_idx[species]))
+                sampled_by_species.setdefault(species, []).append((file_path, self.class_to_idx[species]))
+
+        rng = random.Random(seed)
+        for species in sorted(sampled_by_species):
+            candidates = sampled_by_species[species]
+            if max_per_species is not None and len(candidates) > max_per_species:
+                selected = rng.sample(candidates, max_per_species)
+                selected.sort(key=lambda item: str(item[0]))
+            else:
+                selected = candidates
+            self.samples.extend(selected)
+            self.samples_per_species[species] = len(selected)
 
         if not self.samples:
             raise ValueError("Geen geldige trainingssamples gevonden in index.csv")
@@ -502,6 +525,7 @@ def save_model(
     class_mapping: dict[int, str],
     mel_params: dict[str, int],
     val_accuracy: float,
+    training_info: dict[str, Any],
 ) -> Path:
     """Sla model + metadata op naar models/mammal_cnn.pt."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -512,6 +536,7 @@ def save_model(
             "class_mapping": class_mapping,
             "mel_params": mel_params,
             "val_accuracy": val_accuracy,
+            "training_info": training_info,
         },
         model_path,
     )
@@ -533,6 +558,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--num-workers", type=int, default=4, help="Aantal DataLoader workers")
+    parser.add_argument(
+        "--max-per-species",
+        type=int,
+        default=1000,
+        help="Maximum aantal chunks per soort in training (voorkomt dominantie van vos/wild zwijn)",
+    )
     parser.add_argument(
         "--augment",
         dest="augment",
@@ -561,11 +592,20 @@ def main() -> None:
     if not data_path.exists():
         print(f"Indexbestand niet gevonden: {data_path}", file=sys.stderr)
         sys.exit(1)
+    if args.max_per_species <= 0:
+        print("--max-per-species moet groter zijn dan 0", file=sys.stderr)
+        sys.exit(1)
 
     _set_seed(args.seed)
 
     class_to_idx, idx_to_class = load_class_mapping(species_file)
-    dataset = AudioChunkDataset(data_path, class_to_idx, MEL_PARAMS)
+    dataset = AudioChunkDataset(
+        data_path,
+        class_to_idx,
+        MEL_PARAMS,
+        max_per_species=args.max_per_species,
+        seed=args.seed,
+    )
     train_set, val_set, test_set = _split_dataset(dataset)
 
     if len(train_set) == 0 or len(val_set) == 0 or len(test_set) == 0:
@@ -616,7 +656,14 @@ def main() -> None:
         print(f"- {species}: {acc:.4f}")
     print(f"\nOverall accuracy (test): {test_acc:.4f}")
 
-    model_path = save_model(model, output_dir, idx_to_class, MEL_PARAMS, best_val_acc)
+    training_info = {
+        "samples_per_species": dataset.samples_per_species,
+        "total_samples": len(dataset),
+        "max_per_species": int(args.max_per_species),
+        "clip_duration_s": int(CLIP_DURATION_S),
+        "trained_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
+    model_path = save_model(model, output_dir, idx_to_class, MEL_PARAMS, best_val_acc, training_info)
     print(f"\nModel opgeslagen: {model_path}")
     print(f"Beste validatie-accuracy: {best_val_acc:.4f}")
 

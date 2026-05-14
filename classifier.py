@@ -254,7 +254,7 @@ class MammalCNNClassifier(BaseClassifier):
 
     MODEL_VERSION = "mammal-cnn-1.0"
     TARGET_SR = 16000
-    CLIP_SECONDS = 5
+    CLIP_SECONDS = 10
     MEL_PARAMS = {"sample_rate": 16000, "n_mels": 64, "n_fft": 1024, "hop_length": 512}
 
     def __init__(

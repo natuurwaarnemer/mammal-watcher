@@ -38,7 +38,7 @@ except ImportError:
     HAS_TQDM = False
 
 TARGET_SR = 16000
-CHUNK_SECONDS = 5
+CHUNK_SECONDS = 10
 INDEX_FILENAME = "index.csv"
 AUDIO_EXTENSIONS = {"mp3", "wav", "ogg", "flac", "m4a", "aac", "opus"}
 

@@ -9,7 +9,7 @@
       "inaturalist_taxon_id": 42051,
       "priority": "high",
       "alert": true,
-      "gbif_taxon_key": 5219243
+      "gbif_taxon_key": 5219408
     },
     {
       "scientific": "Canis lupus",
@@ -37,7 +37,7 @@
       "scientific": "Martes martes",
       "nl": "boommarter",
       "en": "pine marten",
-      "emoji": "🟫",
+      "emoji": "🐾",
       "family": "Mustelidae",
       "inaturalist_taxon_id": 41796,
       "priority": "high",
@@ -48,7 +48,7 @@
       "scientific": "Martes foina",
       "nl": "steenmarter",
       "en": "stone marten",
-      "emoji": "🤎",
+      "emoji": "🐾",
       "family": "Mustelidae",
       "inaturalist_taxon_id": 41800,
       "priority": "medium",
@@ -59,7 +59,7 @@
       "scientific": "Meles meles",
       "nl": "das",
       "en": "European badger",
-      "emoji": "⚫",
+      "emoji": "🦡",
       "family": "Mustelidae",
       "inaturalist_taxon_id": 855297,
       "priority": "high",
@@ -76,6 +76,39 @@
       "priority": "very_high",
       "alert": true,
       "gbif_taxon_key": 5219035
+    },
+    {
+      "scientific": "Mustela putorius",
+      "nl": "bunzing",
+      "en": "European polecat",
+      "emoji": "🐾",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": null,
+      "priority": "high",
+      "alert": true,
+      "gbif_taxon_key": 5219085
+    },
+    {
+      "scientific": "Mustela erminea",
+      "nl": "hermelijn",
+      "en": "stoat",
+      "emoji": "🦡",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": null,
+      "priority": "high",
+      "alert": true,
+      "gbif_taxon_key": 5219081
+    },
+    {
+      "scientific": "Mustela nivalis",
+      "nl": "wezel",
+      "en": "least weasel",
+      "emoji": "🐾",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": null,
+      "priority": "medium",
+      "alert": false,
+      "gbif_taxon_key": 5219083
     },
     {
       "scientific": "Capreolus capreolus",
@@ -100,6 +133,17 @@
       "gbif_taxon_key": 2440905
     },
     {
+      "scientific": "Dama dama",
+      "nl": "damhert",
+      "en": "fallow deer",
+      "emoji": "🦌",
+      "family": "Cervidae",
+      "inaturalist_taxon_id": null,
+      "priority": "medium",
+      "alert": false,
+      "gbif_taxon_key": 2441162
+    },
+    {
       "scientific": "Sus scrofa",
       "nl": "wild zwijn",
       "en": "wild boar",
@@ -122,6 +166,72 @@
       "gbif_taxon_key": 5820003
     },
     {
+      "scientific": "Sciurus vulgaris",
+      "nl": "rode eekhoorn",
+      "en": "red squirrel",
+      "emoji": "🐿️",
+      "family": "Sciuridae",
+      "inaturalist_taxon_id": null,
+      "priority": "medium",
+      "alert": false,
+      "gbif_taxon_key": 2437489
+    },
+    {
+      "scientific": "Erinaceus europaeus",
+      "nl": "egel",
+      "en": "European hedgehog",
+      "emoji": "🦔",
+      "family": "Erinaceidae",
+      "inaturalist_taxon_id": null,
+      "priority": "medium",
+      "alert": false,
+      "gbif_taxon_key": 2433728
+    },
+    {
+      "scientific": "Lepus europaeus",
+      "nl": "haas",
+      "en": "brown hare",
+      "emoji": "🐇",
+      "family": "Leporidae",
+      "inaturalist_taxon_id": null,
+      "priority": "medium",
+      "alert": false,
+      "gbif_taxon_key": 2436305
+    },
+    {
+      "scientific": "Oryctolagus cuniculus",
+      "nl": "konijn",
+      "en": "European rabbit",
+      "emoji": "🐇",
+      "family": "Leporidae",
+      "inaturalist_taxon_id": null,
+      "priority": "low",
+      "alert": false,
+      "gbif_taxon_key": 2436584
+    },
+    {
+      "scientific": "Rattus norvegicus",
+      "nl": "bruine rat",
+      "en": "brown rat",
+      "emoji": "🐀",
+      "family": "Muridae",
+      "inaturalist_taxon_id": null,
+      "priority": "low",
+      "alert": false,
+      "gbif_taxon_key": 2438398
+    },
+    {
+      "scientific": "Eliomys quercinus",
+      "nl": "eikelmuis",
+      "en": "garden dormouse",
+      "emoji": "🐭",
+      "family": "Gliridae",
+      "inaturalist_taxon_id": null,
+      "priority": "high",
+      "alert": true,
+      "gbif_taxon_key": 2439683
+    },
+    {
       "scientific": "Lynx lynx",
       "nl": "lynx",
       "en": "Eurasian lynx",
@@ -131,6 +241,17 @@
       "priority": "very_high",
       "alert": true,
       "gbif_taxon_key": 5219072
+    },
+    {
+      "scientific": "Felis silvestris",
+      "nl": "wilde kat",
+      "en": "European wildcat",
+      "emoji": "🐈",
+      "family": "Felidae",
+      "inaturalist_taxon_id": null,
+      "priority": "very_high",
+      "alert": true,
+      "gbif_taxon_key": 2435098
     }
   ]
 }

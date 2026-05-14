@@ -52,6 +52,9 @@ services:
       - ./clips:/app/clips
     environment:
       - PYTHONUNBUFFERED=1
+      - NNPACK_DISABLE=1
+      - OMP_NUM_THREADS=2
+      - TZ=Europe/Amsterdam
 
   review-api:
     build:
@@ -64,8 +67,10 @@ services:
     volumes:
       - ./clips:/app/clips
       - ./feedback:/app/feedback
+      - ./species_config.json:/app/species_config.json:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Europe/Amsterdam
     networks:
       - mammal-net
 
@@ -78,6 +83,9 @@ services:
     volumes:
       - ./web:/usr/share/nginx/html:ro
       - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./.htpasswd:/etc/nginx/.htpasswd:ro
+    environment:
+      - TZ=Europe/Amsterdam
     depends_on:
       - review-api
     networks:
