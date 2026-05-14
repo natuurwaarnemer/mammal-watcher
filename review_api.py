@@ -37,6 +37,7 @@ for directory in (CLIPS_DIR, FEEDBACK_DIR, NEEDS_REVIEW_DIR, CONFIRMED_DIR, REJE
 
 app = FastAPI(title="MammalRadar Review API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+SAFE_PATH_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -103,11 +104,19 @@ def get_detections(limit: int = 50) -> list[dict]:
     return combined[:limit]
 
 
-def _resolve_relative_path(base_dir: Path, rel_path: str) -> Path:
-    rel = Path(rel_path.strip())
-    if rel.is_absolute() or ".." in rel.parts:
+def _safe_relative_parts(rel_path: str) -> list[str]:
+    normalized = rel_path.strip().replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part]
+    if not parts:
         raise HTTPException(status_code=403, detail="Verboden pad")
-    full_path = (base_dir / rel).resolve()
+    for part in parts:
+        if part in {".", ".."} or not SAFE_PATH_PART.fullmatch(part):
+            raise HTTPException(status_code=403, detail="Verboden pad")
+    return parts
+
+
+def _resolve_relative_path(base_dir: Path, rel_path: str) -> Path:
+    full_path = base_dir.joinpath(*_safe_relative_parts(rel_path)).resolve()
     try:
         full_path.relative_to(base_dir)
     except ValueError as exc:
@@ -176,8 +185,13 @@ def _move_clip_and_sidecar(
     destination_species: str | None = None,
     metadata_updates: dict[str, Any] | None = None,
 ) -> Path:
-    species = destination_species or clip.parent.name
+    species = _species_slug(destination_species or clip.parent.name)
     target_dir = destination_root / species
+    target_dir = target_dir.resolve()
+    try:
+        target_dir.relative_to(destination_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Verboden pad") from exc
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / clip.name
     shutil.move(str(clip), str(target))
