@@ -87,7 +87,7 @@
       .badge.mid { background: rgba(255, 179, 71, 0.18); color: var(--warn); }
       .badge.low { background: rgba(255, 77, 79, 0.18); color: var(--danger); }
       audio { width: 100%; margin-top: 0.8rem; }
-      .actions { display: flex; gap: 0.5rem; margin-top: 0.8rem; }
+      .actions { display: flex; gap: 0.5rem; margin-top: 0.8rem; flex-wrap: wrap; }
       .btn {
         border: 0;
         border-radius: 10px;
@@ -98,6 +98,27 @@
       }
       .btn.ok { background: #138a4a; }
       .btn.no { background: #c23234; }
+      .btn.alt { background: #3857d6; }
+      .btn.ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+      }
+      .correct-panel {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .correct-panel select {
+        flex: 1 1 220px;
+        min-width: 0;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #11151e;
+        color: var(--text);
+        padding: 0.55rem 0.65rem;
+      }
       .empty {
         text-align: center;
         color: var(--muted);
@@ -122,7 +143,7 @@
         </nav>
       </header>
 
-      <section class="stats" id="stats">0 te beoordelen | 0 bevestigd | 0 afgewezen</section>
+      <section class="stats" id="stats">0 te beoordelen | 0 bevestigd | 0 afgewezen | 0 gecorrigeerd</section>
 
       <section class="tabs">
         <button class="tab active" data-filter="all">Alle</button>
@@ -141,6 +162,28 @@
       const tabs = [...document.querySelectorAll(".tab")];
       let currentFilter = "all";
       let detections = [];
+      let speciesOptions = null;
+
+      const escapeHtml = (value) =>
+        String(value ?? "").replace(/[&<>"']/g, (char) => (
+          { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] || char
+        ));
+
+      const encodePath = (path) =>
+        String(path || "")
+          .split("/")
+          .filter(Boolean)
+          .map((segment) => encodeURIComponent(segment))
+          .join("/");
+
+      const normalizeSpeciesSlug = (value) =>
+        String(value || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "_")
+          .replace(/[^a-z0-9_]/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_+|_+$/g, "");
 
       const fmtDate = (value) => {
         const dt = new Date(value);
@@ -165,6 +208,39 @@
         return detections;
       };
 
+      const buildAudioUrl = (item) => {
+        if (item.audio_url) return item.audio_url;
+        if (!item.clip_path) return "";
+        const clipPath = item.clip_path.startsWith("clips/")
+          ? item.clip_path
+          : `needs_review/${item.clip_path}`;
+        return `/api/audio/${encodePath(clipPath)}`;
+      };
+
+      const ensureSpeciesLoaded = async () => {
+        if (speciesOptions) return speciesOptions;
+        const resp = await fetch("/api/species");
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const species = await resp.json();
+        speciesOptions = species
+          .map((item) => ({
+            scientific: item.scientific,
+            nl: item.nl,
+            slug: item.slug || normalizeSpeciesSlug(item.scientific),
+          }))
+          .sort((a, b) => a.nl.localeCompare(b.nl, "nl"));
+        return speciesOptions;
+      };
+
+      const markDone = async (item, card) => {
+        card.classList.add("done");
+        setTimeout(async () => {
+          detections = detections.filter((row) => row.clip_path !== item.clip_path);
+          render();
+          await loadStats();
+        }, 1000);
+      };
+
       const render = () => {
         const rows = filteredDetections();
         cardsEl.innerHTML = "";
@@ -177,41 +253,76 @@
           const scientific = item.species_scientific || "Onbekend";
           const nl = item.species_nl || scientific;
           const confidence = Number(item.confidence || 0);
+          const audioUrl = buildAudioUrl(item);
           const card = document.createElement("article");
           card.className = "card";
           card.innerHTML = `
-            <h3>${nl}</h3>
-            <div class="meta"><em>${scientific}</em></div>
+            <h3>${escapeHtml(nl)}</h3>
+            <div class="meta"><em>${escapeHtml(scientific)}</em></div>
             <span class="badge ${confidenceClass(confidence)}">confidence ${confidence.toFixed(2)}</span>
-            <div class="meta">${fmtDate(item.timestamp)}</div>
-            <audio controls preload="none" src="${item.audio_url || ""}"></audio>
+            <div class="meta">${escapeHtml(fmtDate(item.timestamp))}</div>
+            <audio controls preload="none" src="${audioUrl}"></audio>
             <div class="actions">
               <button class="btn ok" ${item.source !== "needs_review" ? "disabled" : ""}>✅ Correct</button>
               <button class="btn no" ${item.source !== "needs_review" ? "disabled" : ""}>❌ False positive</button>
+              <button class="btn alt" ${item.source !== "needs_review" ? "disabled" : ""}>🔄 Verkeerde soort</button>
+            </div>
+            <div class="correct-panel" hidden>
+              <select aria-label="Kies de juiste soort">
+                <option value="">Kies de juiste soort…</option>
+              </select>
+              <button class="btn alt" disabled>Opslaan</button>
+              <button class="btn ghost" type="button">Annuleren</button>
             </div>
           `;
 
-          const [confirmBtn, rejectBtn] = card.querySelectorAll(".btn");
+          const [confirmBtn, rejectBtn, correctBtn, saveBtn, cancelBtn] = card.querySelectorAll(".btn");
+          const correctionPanel = card.querySelector(".correct-panel");
+          const select = card.querySelector("select");
           confirmBtn?.addEventListener("click", () => review(item, "confirm", card, idx));
           rejectBtn?.addEventListener("click", () => review(item, "reject", card, idx));
+          correctBtn?.addEventListener("click", async () => {
+            try {
+              correctBtn.disabled = true;
+              const species = await ensureSpeciesLoaded();
+              if (select.options.length <= 1) {
+                species.forEach((option) => {
+                  const el = document.createElement("option");
+                  el.value = option.slug;
+                  el.textContent = `${option.nl} — ${option.scientific}`;
+                  select.appendChild(el);
+                });
+              }
+              correctionPanel.hidden = false;
+            } catch (error) {
+              console.error(error);
+              alert("Soortenlijst laden mislukt.");
+            } finally {
+              correctBtn.disabled = false;
+            }
+          });
+          select?.addEventListener("change", () => {
+            saveBtn.disabled = !select.value;
+          });
+          saveBtn?.addEventListener("click", () => review(item, "correct", card, idx, { corrected_species: select.value }));
+          cancelBtn?.addEventListener("click", () => {
+            select.value = "";
+            saveBtn.disabled = true;
+            correctionPanel.hidden = true;
+          });
           cardsEl.appendChild(card);
         });
       };
 
-      const review = async (item, action, card) => {
+      const review = async (item, action, card, _idx, extraPayload = {}) => {
         try {
           const resp = await fetch(`/api/${action}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ clip_path: item.clip_path }),
+            body: JSON.stringify({ clip_path: item.clip_path, ...extraPayload }),
           });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          card.classList.add("done");
-          setTimeout(async () => {
-            detections = detections.filter((row) => row.clip_path !== item.clip_path);
-            render();
-            await loadStats();
-          }, 1000);
+          await markDone(item, card);
         } catch (error) {
           console.error(error);
           alert("Actie mislukt, probeer opnieuw.");
@@ -221,7 +332,7 @@
       const loadStats = async () => {
         const resp = await fetch("/api/stats");
         const data = await resp.json();
-        statsEl.textContent = `${data.needs_review || 0} te beoordelen | ${data.confirmed || 0} bevestigd | ${data.rejected || 0} afgewezen`;
+        statsEl.textContent = `${data.needs_review || 0} te beoordelen | ${data.confirmed || 0} bevestigd | ${data.rejected || 0} afgewezen | ${data.corrected || 0} gecorrigeerd`;
       };
 
       const loadDetections = async () => {

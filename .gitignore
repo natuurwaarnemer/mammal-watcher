@@ -16,6 +16,7 @@ env/
 # Environment variables
 .env
 *.env
+.htpasswd
 
 # Audio files (geen snippets in de repo)
 *.wav

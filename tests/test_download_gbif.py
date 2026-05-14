@@ -21,11 +21,13 @@ def test_load_species_reads_gbif_taxon_keys_from_config() -> None:
 
     species = module._load_species(repo_root / "species_config.json")
     assert species
+    assert len(species) == 23
 
     by_scientific = {s["scientific"]: s["gbif_taxon_key"] for s in species}
     assert "Canis lupus" in by_scientific
-    assert by_scientific["Vulpes vulpes"] == 5219243
+    assert by_scientific["Vulpes vulpes"] == 5219408
     assert by_scientific["Lynx lynx"] == 5219072
+    assert by_scientific["Felis silvestris"] == 2435098
 
 
 def test_collect_sound_media_filters_non_sound_and_missing_identifier() -> None:
@@ -34,7 +36,7 @@ def test_collect_sound_media_filters_non_sound_and_missing_identifier() -> None:
     occurrences = [
         {
             "occurrenceID": "occ-1",
-            "taxonKey": 5219243,
+            "taxonKey": 5219408,
             "license": "CC-BY",
             "media": [
                 {"type": "StillImage", "identifier": "https://example.org/image.jpg"},
