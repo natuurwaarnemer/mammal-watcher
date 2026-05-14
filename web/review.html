@@ -238,7 +238,7 @@
           detections = detections.filter((row) => row.clip_path !== item.clip_path);
           render();
           await loadStats();
-        }, 600);
+        }, 1000);
       };
 
       const render = () => {
