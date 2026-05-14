@@ -29,7 +29,7 @@ import numpy as np
 import yaml
 import soundfile as sf
 
-from classifier import BaseClassifier, StubClassifier, YAMNetClassifier
+from classifier import BaseClassifier, MammalCNNClassifier, StubClassifier, YAMNetClassifier
 from feedback_collector import FeedbackCollector
 
 __version__ = "0.2.0"
@@ -273,6 +273,16 @@ def main() -> None:
             )
         except Exception:  # noqa: BLE001
             logger.exception("YAMNet laden mislukt, gebruik stub fallback")
+            classifier = StubClassifier()
+    elif model_name == "mammal_cnn":
+        try:
+            classifier = MammalCNNClassifier(
+                model_path=cfg.get("classifier", {}).get("model_path", "models/mammal_cnn.pt"),
+                min_confidence=cfg.get("classifier", {}).get("min_confidence", 0.1),
+            )
+            logger.info("MammalCNN model geladen")
+        except Exception:  # noqa: BLE001
+            logger.exception("MammalCNN laden mislukt, gebruik stub fallback")
             classifier = StubClassifier()
     else:
         logger.warning("Onbekend model '%s', gebruik stub als fallback", model_name)
