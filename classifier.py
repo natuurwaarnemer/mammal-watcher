@@ -334,7 +334,7 @@ class MammalCNNClassifier(BaseClassifier):
         scientific = slug.strip().replace("_", " ").lower()
         if not scientific:
             return "Unknown species"
-        return scientific[:1].upper() + scientific[1:]
+        return scientific.capitalize()
 
     @staticmethod
     def _load_species_lookup(path: str) -> dict[str, dict[str, str]]:

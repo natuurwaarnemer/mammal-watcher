@@ -71,7 +71,7 @@ def test_confirm_moves_clip_to_confirmed(tmp_path: Path, monkeypatch) -> None:
         json.dump({"review_status": "needs_review"}, fh)
 
     client = TestClient(review_api.app)
-    resp = client.post("/api/confirm", json={"clip_path": str(wav_path)})
+    resp = client.post("/api/confirm", json={"clip_path": f"meles_meles/{wav_path.name}"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "confirmed"
@@ -80,3 +80,10 @@ def test_confirm_moves_clip_to_confirmed(tmp_path: Path, monkeypatch) -> None:
     assert target.exists()
     with open(target.with_suffix(".json"), encoding="utf-8") as fh:
         assert json.load(fh)["review_status"] == "confirmed"
+
+
+def test_confirm_rejects_path_traversal(tmp_path: Path, monkeypatch) -> None:
+    review_api, _, _ = _load_review_api_module(tmp_path, monkeypatch)
+    client = TestClient(review_api.app)
+    resp = client.post("/api/confirm", json={"clip_path": "../outside.wav"})
+    assert resp.status_code == 403

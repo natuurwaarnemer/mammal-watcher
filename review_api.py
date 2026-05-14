@@ -66,7 +66,7 @@ def _list_needs_review() -> list[dict]:
         if wav.exists():
             data["audio_url"] = f"/api/audio/{wav.relative_to(FEEDBACK_DIR)}"
             data["source"] = "needs_review"
-            data["clip_path"] = str(wav)
+            data["clip_path"] = str(wav.relative_to(NEEDS_REVIEW_DIR))
             items.append(data)
     return items
 
@@ -80,7 +80,7 @@ def _list_confirmed_clips(limit: int = 100) -> list[dict]:
         if wav.exists():
             clip["audio_url"] = f"/api/audio/clips/{filename}"
             clip["source"] = "clips"
-            clip["clip_path"] = str(wav)
+            clip["clip_path"] = f"clips/{filename}"
     return clips
 
 
@@ -93,48 +93,38 @@ def get_detections(limit: int = 50) -> list[dict]:
     return combined[:limit]
 
 
+def _resolve_relative_path(base_dir: Path, rel_path: str) -> Path:
+    rel = Path(rel_path.strip())
+    if rel.is_absolute() or ".." in rel.parts:
+        raise HTTPException(status_code=403, detail="Verboden pad")
+    full_path = (base_dir / rel).resolve()
+    try:
+        full_path.relative_to(base_dir)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Verboden pad") from exc
+    return full_path
+
+
 def _resolve_audio_path(rel_path: str) -> Path:
     if rel_path.startswith("clips/"):
-        full_path = CLIPS_DIR / rel_path[len("clips/") :]
-    else:
-        full_path = FEEDBACK_DIR / rel_path
-    return full_path.resolve()
+        return _resolve_relative_path(CLIPS_DIR, rel_path[len("clips/") :])
+    return _resolve_relative_path(FEEDBACK_DIR, rel_path)
 
 
 @app.get("/api/audio/{rel_path:path}")
 def get_audio(rel_path: str) -> FileResponse:
     full_path = _resolve_audio_path(rel_path)
 
-    try:
-        full_path.relative_to(CLIPS_DIR)
-    except ValueError:
-        try:
-            full_path.relative_to(FEEDBACK_DIR)
-        except ValueError as exc:
-            raise HTTPException(status_code=403, detail="Verboden pad") from exc
-
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Bestand niet gevonden")
+    if full_path.suffix.lower() != ".wav":
+        raise HTTPException(status_code=400, detail="Alleen WAV-bestanden toegestaan")
 
     return FileResponse(str(full_path), media_type="audio/wav")
 
 
 class ReviewRequest(BaseModel):
     clip_path: str
-
-
-def _validate_path(path: Path) -> None:
-    try:
-        path.relative_to(FEEDBACK_DIR)
-        return
-    except ValueError:
-        pass
-
-    try:
-        path.relative_to(CLIPS_DIR)
-        return
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail="Verboden pad") from exc
 
 
 def _move_clip_and_sidecar(clip: Path, destination_root: Path, status: str) -> Path:
@@ -161,8 +151,7 @@ def _move_clip_and_sidecar(clip: Path, destination_root: Path, status: str) -> P
 
 @app.post("/api/confirm")
 def confirm_detection(req: ReviewRequest) -> dict[str, Any]:
-    clip = Path(req.clip_path).resolve()
-    _validate_path(clip)
+    clip = _resolve_relative_path(NEEDS_REVIEW_DIR, req.clip_path)
     if not clip.exists():
         raise HTTPException(status_code=404, detail="Clip niet gevonden")
     target = _move_clip_and_sidecar(clip, CONFIRMED_DIR, "confirmed")
@@ -171,8 +160,7 @@ def confirm_detection(req: ReviewRequest) -> dict[str, Any]:
 
 @app.post("/api/reject")
 def reject_detection(req: ReviewRequest) -> dict[str, Any]:
-    clip = Path(req.clip_path).resolve()
-    _validate_path(clip)
+    clip = _resolve_relative_path(NEEDS_REVIEW_DIR, req.clip_path)
     if not clip.exists():
         raise HTTPException(status_code=404, detail="Clip niet gevonden")
     target = _move_clip_and_sidecar(clip, REJECTED_DIR, "rejected")
