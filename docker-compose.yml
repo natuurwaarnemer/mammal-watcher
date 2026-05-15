@@ -7,32 +7,32 @@ services:
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
 
-  rtsp-bridge:
-    image: linuxserver/ffmpeg:latest
-    container_name: mammal-rtsp-bridge
-    restart: always
-    network_mode: host
-    depends_on:
-      - mediamtx
-    healthcheck:
-      test: ["CMD", "ffprobe", "-rtsp_transport", "tcp", "-i", "rtsp://localhost:8554/mic", "-show_streams", "-select_streams", "a", "-of", "json"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    entrypoint:
-      - ffmpeg
-      - -rtsp_transport
-      - tcp
-      - -i
-      - ${ESP32_RTSP_URL}
-      - -c
-      - copy
-      - -f
-      - rtsp
-      - -rtsp_transport
-      - tcp
-      - rtsp://localhost:8554/mic
+#  rtsp-bridge:
+#    image: linuxserver/ffmpeg:latest
+#    container_name: mammal-rtsp-bridge
+#    restart: always
+#    network_mode: host
+#    depends_on:
+#     - mediamtx
+#    healthcheck:
+#      test: ["CMD", "ffprobe", "-rtsp_transport", "tcp", "-i", "rtsp://localhost:8554/mic", "-show_streams", "-select_streams", "a", "-of", "json"]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
+#      start_period: 15s
+#    entrypoint:
+#      - ffmpeg
+#      - -rtsp_transport
+#      - tcp
+#      - -i
+#      - ${ESP32_RTSP_URL}
+#      - -c
+#      - copy
+#      - -f
+#      - rtsp
+#      - -rtsp_transport
+#      - tcp
+#      - rtsp://localhost:8554/mic
 
   mammal-watcher:
     build: .
@@ -42,8 +42,8 @@ services:
     depends_on:
       mediamtx:
         condition: service_started
-      rtsp-bridge:
-        condition: service_healthy
+#      rtsp-bridge:
+#        condition: service_healthy
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./species_mammals_nl.csv:/app/species_mammals_nl.csv:ro

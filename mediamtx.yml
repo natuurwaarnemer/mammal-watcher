@@ -4,10 +4,5 @@ apiAddress: 127.0.0.1:9997
 
 paths:
   mic:
-    # source: publisher means ffmpeg-bridge pushes audio into this path.
-    # MediaMTX does NOT pull from the ESP32 directly — the ESP32 firmware only
-    # accepts ONE RTSP client at a time and triggered "unexpected interleaved
-    # frame" errors with MediaMTX's built-in RTSP client. ffmpeg-bridge handles
-    # the pull/push translation cleanly and allows fan-out to multiple consumers
-    # (BirdNET-Go + mammal-watcher).
-    source: publisher
+    source: rtsp://192.168.2.20:8554/audio
+    sourceOnDemand: yes
