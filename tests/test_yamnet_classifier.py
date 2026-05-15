@@ -41,6 +41,22 @@ def test_yamnet_classifier_interface() -> None:
     assert issubclass(YAMNetClassifier, BaseClassifier)
 
 
+def test_yamnet_preprocess_normalizes_low_amplitude_audio() -> None:
+    from classifier import YAMNetClassifier
+
+    class FakeYamnet:
+        def __call__(self, audio: np.ndarray) -> tuple[np.ndarray, None, None]:
+            return np.zeros((1, 521), dtype=np.float32), None, None
+
+    clf = YAMNetClassifier(model=FakeYamnet())
+    audio = np.array([0.05, -0.025], dtype=np.float32)
+
+    processed = clf._preprocess(audio, sr=16000)
+
+    assert np.max(np.abs(processed)) == pytest.approx(1.0)
+    assert processed[0] == pytest.approx(1.0)
+
+
 def test_clip_saver_creates_files(tmp_path: Path) -> None:
     from mammal_watcher import ClipSaver
 

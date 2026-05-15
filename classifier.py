@@ -162,7 +162,7 @@ class YAMNetClassifier(BaseClassifier):
             return samples
 
         peak = float(np.max(np.abs(samples)))
-        if peak > 1.0:
+        if peak > 0.0:
             samples = samples / peak
 
         if sr <= 0:
@@ -356,7 +356,7 @@ class MammalCNNClassifier(BaseClassifier):
             return None
 
         peak = float(np.max(np.abs(samples)))
-        if peak > 1.0:
+        if peak > 0.0:
             samples = samples / peak
 
         waveform = self._torch.from_numpy(samples)
