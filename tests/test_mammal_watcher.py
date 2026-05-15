@@ -527,3 +527,82 @@ class TestRTSPConsumer:
             window_seconds=5.0,
         )
         assert consumer._window_size == 240000  # 48000 * 5
+
+    def test_iter_windows_av_peak_normalizes_low_float_audio(self) -> None:
+        """PyAV-pad moet lage float-amplitude per frame piek-normaliseren."""
+        from rtsp_consumer import RTSPConsumer
+
+        consumer = RTSPConsumer(
+            url="rtsp://localhost:8554/mic",
+            target_sr=4,
+            window_seconds=1.0,
+            hop_seconds=1.0,
+        )
+
+        class DummyFrame:
+            sample_rate = 4
+
+            def to_ndarray(self) -> np.ndarray:
+                return np.array([0.01, -0.02, 0.05, -0.04], dtype=np.float32)
+
+        class DummyContainer:
+            def decode(self, audio: int = 0):  # noqa: ARG002
+                return iter([DummyFrame()])
+
+            def close(self) -> None:
+                return None
+
+        with patch("av.open", return_value=DummyContainer()):
+            gen = consumer._iter_windows_av()
+            window, sr, _ = next(gen)
+            consumer.stop()
+            gen.close()
+
+        assert sr == 4
+        assert np.isclose(np.abs(window).max(), 1.0)
+        assert window.dtype == np.float32
+
+    def test_iter_windows_ffmpeg_peak_normalizes_chunks(self) -> None:
+        """ffmpeg-fallback moet chunks na s16 normalisatie ook piek-normaliseren."""
+        from rtsp_consumer import RTSPConsumer
+
+        consumer = RTSPConsumer(
+            url="rtsp://localhost:8554/mic",
+            target_sr=4,
+            window_seconds=1.0,
+            hop_seconds=1.0,
+        )
+
+        raw_chunk = np.array([1000, -2000, 500, 0], dtype=np.int16).tobytes()
+
+        class DummyStdout:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+                self._read_count = 0
+
+            def read(self, _size: int) -> bytes:
+                if self._read_count == 0:
+                    self._read_count += 1
+                    return self._payload
+                return b""
+
+        class DummyProc:
+            def __init__(self, payload: bytes) -> None:
+                self.pid = 1234
+                self.stdout = DummyStdout(payload)
+
+            def terminate(self) -> None:
+                return None
+
+            def wait(self, timeout: float | None = None) -> int:  # noqa: ARG002
+                return 0
+
+        with patch("rtsp_consumer.subprocess.Popen", return_value=DummyProc(raw_chunk)):
+            gen = consumer._iter_windows_ffmpeg()
+            window, sr, _ = next(gen)
+            consumer.stop()
+            gen.close()
+
+        assert sr == 4
+        assert np.isclose(np.abs(window).max(), 1.0)
+        assert window.dtype == np.float32
