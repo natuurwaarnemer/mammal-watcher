@@ -211,10 +211,7 @@
       const buildAudioUrl = (item) => {
         if (item.audio_url) return item.audio_url;
         if (!item.clip_path) return "";
-        const clipPath = item.clip_path.startsWith("clips/")
-          ? item.clip_path
-          : `needs_review/${item.clip_path}`;
-        return `/api/audio/${encodePath(clipPath)}`;
+        return `/api/audio/${encodePath(item.clip_path)}`;
       };
 
       const ensureSpeciesLoaded = async () => {
@@ -244,11 +241,10 @@
       const render = () => {
         const rows = filteredDetections();
         cardsEl.innerHTML = "";
+        emptyEl.hidden = rows.length > 0;
         if (!rows.length) {
-          emptyEl.hidden = false;
           return;
         }
-        emptyEl.hidden = true;
         rows.forEach((item, idx) => {
           const scientific = item.species_scientific || "Onbekend";
           const nl = item.species_nl || scientific;
@@ -276,7 +272,11 @@
             </div>
           `;
 
-          const [confirmBtn, rejectBtn, correctBtn, saveBtn, cancelBtn] = card.querySelectorAll(".btn");
+          const confirmBtn = card.querySelector(".btn.ok");
+          const rejectBtn = card.querySelector(".btn.no");
+          const correctBtn = card.querySelector(".actions .btn.alt");
+          const saveBtn = card.querySelector(".correct-panel .btn.alt");
+          const cancelBtn = card.querySelector(".btn.ghost");
           const correctionPanel = card.querySelector(".correct-panel");
           const select = card.querySelector("select");
           confirmBtn?.addEventListener("click", () => review(item, "confirm", card, idx));
@@ -330,9 +330,15 @@
       };
 
       const loadStats = async () => {
-        const resp = await fetch("/api/stats");
-        const data = await resp.json();
-        statsEl.textContent = `${data.needs_review || 0} te beoordelen | ${data.confirmed || 0} bevestigd | ${data.rejected || 0} afgewezen | ${data.corrected || 0} gecorrigeerd`;
+        try {
+          const resp = await fetch("/api/stats");
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const data = await resp.json();
+          statsEl.textContent = `${data.needs_review || 0} te beoordelen | ${data.confirmed || 0} bevestigd | ${data.rejected || 0} afgewezen | ${data.corrected || 0} gecorrigeerd`;
+        } catch (error) {
+          console.error(error);
+          statsEl.textContent = "API niet bereikbaar";
+        }
       };
 
       const loadDetections = async () => {

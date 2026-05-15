@@ -13,7 +13,7 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 
 | Stap | Omschrijving | Status |
 |------|-------------|--------|
-| 1 | ESP32 mic → RTSP stream → MediaMTX → ffmpeg bridge | ✅ WERKEND |
+| 1 | ESP32 mic → RTSP stream → MediaMTX directe fan-out (ffmpeg bridge verwijderd) | ✅ WERKEND |
 | 2 | YAMNet pre-filter (bird/mammal/human/vehicle) | ✅ WERKEND (vervangen door MammalCNN in stap 4) |
 | 3 | EcoSound subcategorisatie | ⏳ UITGESTELD |
 | 4 | Eigen MammalCNN soortherkenning (23 NL soorten) | 🔄 IN ONTWIKKELING |
@@ -26,16 +26,17 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 ## Huidige status (per 2026-05-15)
 
 ### ✅ Wat werkt
-- RTSP audio pipeline: ESP32 → MediaMTX → ffmpeg-bridge → `rtsp://localhost:8554/mic`
+- RTSP audio pipeline: ESP32 → MediaMTX directe fan-out → `rtsp://localhost:8554/mic`
+- MediaMTX directe fan-out (ffmpeg-bridge verwijderd wegens instabiliteit)
 - Reboot-safe startup via `startup.sh` + systemd unit
 - **MammalCNN** draait lokaal (PyTorch, CPU-only op HP630/T630)
 - 23 doelsoorten in training dataset
 - Clip opslag: `clips/confirmed` en `clips/uncertain`
-- Review workflow: `review_api.py` (Flask API) + web UI
+- Review workflow: `web/review.html` + `review_api.py` (Flask→FastAPI)
 - Feedback loop: `feedback_collector.py` voor active learning
 - MQTT publisher: detecties → n8n
 - Docker stack: `docker-compose.yml` met alle services
-- nginx landing page onder `web/`
+- mammalradar.net landing page via Cloudflare tunnel
 
 ### 🔄 In ontwikkeling (Stap 4)
 - MammalCNN model verbeteren met meer trainingsdata
@@ -53,10 +54,11 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 | Beslissing | Reden |
 |---|---|
 | RTSP via MediaMTX i.p.v. directe audio | Stabielere stream, herbruikbaar door meerdere consumers |
-| ffmpeg bridge | Herlevert RTSP naar formaat dat Python consumers aankunnen |
+| ffmpeg bridge verwijderd → MediaMTX direct | Bridge was instabiel met veel uitval, MediaMTX fan-out is robuuster |
 | YAMNet als pre-filter vervangen door MammalCNN | Eigen model geeft betere soortspecifieke herkenning voor NL fauna |
 | CPU-only PyTorch (geen GPU) | Hardware beperking: HP630/T630 heeft geen GPU |
 | Classifier input altijd normaliseren (PR #23) | Lage RTSP amplitudes werden gemist zonder normalisatie |
+| RTSP amplitude normalisatie ook in consumer | MediaMTX levert soms stille float32 frames, peak-norm vóór classificatie nodig |
 | Data augmentatie + class-weighted loss (PR #14) | Class imbalance tussen soorten in trainingsdata |
 | Zware CPU-augmentaties verwijderd (PR #15) | Te traag op CPU hardware |
 | NatureLM (HuggingFace) + Freesound downloaders (PR #8) | Xeno-Canto had onvoldoende zoogdiergeluiden |
@@ -93,7 +95,7 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 mammal-watcher/
 ├── mammal_watcher.py      # Hoofdproces: RTSP consumer + classificatie loop
 ├── classifier.py          # MammalCNN model + inferentie
-├── rtsp_consumer.py       # RTSP audio inlezen
+├── rtsp_consumer.py       # RTSP audio inlezen (direct vanaf MediaMTX fan-out)
 ├── mqtt_publisher.py      # Detecties publiceren via MQTT
 ├── feedback_collector.py  # Active learning feedback loop
 ├── review_api.py          # Flask API voor clip review
@@ -108,7 +110,9 @@ mammal-watcher/
 ├── mediamtx.yml           # MediaMTX configuratie
 ├── dataset/               # Trainingsdata scripts en downloaders
 ├── training/              # CNN training code
-├── web/                   # nginx landing page
+├── web/index.html         # MammalRadar landing page
+├── web/review.html        # Review UI voor needs_review clips
+├── web/                   # Overige web assets (nginx)
 ├── n8n/                   # n8n workflow exports
 ├── systemd/               # systemd unit files
 ├── tests/                 # Pytest tests
@@ -156,3 +160,4 @@ mammal-watcher/
 - PR #21: YAMNet vervangen door lokale MammalCNN + review workflow
 - PR #22: Review beveiligd + 23 soorten + balanced 10s clips
 - PR #23: Classifier input normalisatie fix (lage RTSP amplitudes)
+- PR #24: RTSP amplitude fix + review UI bugfixes + CONTEXT.md update
