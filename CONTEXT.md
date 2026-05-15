@@ -210,6 +210,22 @@ docker run --rm \
 
 ---
 
+## Toekomstige ideeën (nog niet opgepakt)
+
+### Review page verbeteringen
+- **"Opnieuw trainen" knop** op `web/review.html` → triggert `retrain.sh` via nieuwe API endpoint
+- **Teller** hoeveel keer opnieuw getraind is (bijhouden in `models/retrain_log.json` of sidecar)
+  - Bijv: `retrain #3 — 2026-05-16 — val_acc: 0.74 — 312 nieuwe feedback clips`
+  - Zichtbaar op review page zodat je voortgang ziet
+- Idee: drempelwaarde instellen → automatisch retrain starten als X nieuwe confirmed clips beschikbaar zijn
+
+### Veldkastjes (toekomst)
+- BirdNET embeddings als transfer learning basis → minder data nodig per soort
+- Raspberry Pi / ESP32-CAM als veldkastje hardware
+- Lokale opslag + periodieke sync naar n8nserver
+
+---
+
 ## PR geschiedenis (samenvatting)
 - PR #1: Initiële scaffold
 - PR #2-3: RTSP/MediaMTX/MQTT architecturele pivot
