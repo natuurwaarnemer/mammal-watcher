@@ -8,7 +8,10 @@
 ## 🐳 Stack beheer
 
 ```bash
-# Start alles (clean, verwijdert oude orphan containers)
+# Start alles
+docker compose up -d
+
+# Start alles (verwijdert oude orphan containers)
 docker compose up -d --remove-orphans
 
 # Stop alles
@@ -80,15 +83,87 @@ ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/mic \
 
 ---
 
-## 🔁 Retraining
+## 🖥️ Screen (lange processen — voorkomt wegvallen bij SSH disconnect)
 
 ```bash
-# Hertraining pipeline starten
-bash retrain.sh
+# Nieuwe screen sessie starten
+screen -S training
+
+# Detach (sessie blijft draaien op achtergrond)
+Ctrl+A, D
+
+# Weer terugkoppelen
+screen -r training
+
+# Overzicht actieve sessies
+screen -ls
+
+# Sessie forceren te sluiten
+screen -X -S training quit
+```
+
+---
+
+## 🔁 Training
+
+```bash
+# Training starten (altijd in screen!)
+screen -S training
+
+docker run --rm \
+  -v /mnt/usb:/mnt/usb:ro \
+  -v $(pwd)/models:/app/models \
+  -v $(pwd)/species_config.json:/app/species_config.json:ro \
+  -v $(pwd)/training:/app/training:ro \
+  mammal-watcher-mammal-watcher \
+  python3 training/train.py \
+    --data /mnt/usb/prepared/index.csv \
+    --output /app/models \
+    --epochs 30 \
+    --batch-size 16 \
+    --num-workers 2 \
+    --max-per-species 500 \
+    --augment
 
 # Handmatig controleren welke feedback clips beschikbaar zijn
 find feedback/needs_review -name "*.wav" | wc -l
 find feedback/confirmed -name "*.wav" | wc -l
+
+# Retraining pipeline (na feedback collectie)
+bash retrain.sh
+```
+
+---
+
+## 🔍 Model inspecteren
+
+```bash
+# Controleer of model geldig is (niet corrupt)
+docker run --rm \
+  -v $(pwd)/models:/app/models \
+  mammal-watcher-mammal-watcher \
+  python3 -c "
+import torch
+cp = torch.load('/app/models/mammal_cnn.pt', map_location='cpu', weights_only=False)
+print('Keys:', list(cp.keys()))
+print('Soorten:', cp.get('class_mapping', {}))
+print('Datum:', cp.get('training_info', {}).get('trained_at', 'onbekend'))
+print('Val acc:', cp.get('val_accuracy', 'onbekend'))
+"
+
+# USB data inspecteren via container
+docker run --rm \
+  -v /mnt/usb:/mnt/usb:ro \
+  mammal-watcher-mammal-watcher \
+  python3 -c "
+import collections
+import os
+for soort in sorted(os.listdir('/mnt/usb/prepared/')):
+    pad = f'/mnt/usb/prepared/{soort}'
+    if os.path.isdir(pad):
+        n = len([f for f in os.listdir(pad) if f.endswith('.wav')])
+        print(f'{n:5d} {soort}')
+"
 ```
 
 ---
@@ -140,6 +215,11 @@ docker exec -it mammal-review-api bash
 # Test review API rechtstreeks
 curl http://localhost:8081/api/stats | python3 -m json.tool
 curl http://localhost:8081/api/detections?limit=5 | python3 -m json.tool
+
+# Model laadt niet? Controleer of het echt een PyTorch bestand is
+xxd models/mammal_cnn.pt | head -3
+# Eerste bytes moeten zijn: 80 02 of 80 04 (pickle/torch magic)
+# NIET: 73 6b 6c (= 'skl' = sklearn!) 
 ```
 
 ---

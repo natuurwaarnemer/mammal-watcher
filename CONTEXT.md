@@ -16,8 +16,8 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 | 1 | ESP32 mic → RTSP stream → MediaMTX directe fan-out (ffmpeg bridge verwijderd) | ✅ WERKEND |
 | 2 | YAMNet pre-filter (bird/mammal/human/vehicle) | ✅ WERKEND (vervangen door MammalCNN in stap 4) |
 | 3 | EcoSound subcategorisatie | ⏳ UITGESTELD |
-| 4 | Eigen MammalCNN soortherkenning (23 NL soorten) | 🔄 IN ONTWIKKELING |
-| 5 | NatureLM zero-shot geavanceerde AI laag | ⏳ TOEKOMST |
+| 4 | Eigen MammalCNN soortherkenning (15 soorten op USB, training loopt) | 🔄 IN ONTWIKKELING |
+| 5 | NatureLM zero-shot geavanceerde AI laag / BirdNET embeddings | ⏳ TOEKOMST |
 | 6 | InfluxDB + Grafana dashboards | ⏳ TOEKOMST |
 | 7 | n8n workflows (Telegram, Mastodon, dagrapport) | ⏳ TOEKOMST |
 
@@ -29,23 +29,60 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 - RTSP audio pipeline: ESP32 → MediaMTX directe fan-out → `rtsp://localhost:8554/mic`
 - MediaMTX directe fan-out (ffmpeg-bridge verwijderd wegens instabiliteit)
 - Reboot-safe startup via `startup.sh` + systemd unit
-- **MammalCNN** draait lokaal (PyTorch, CPU-only op HP630/T630)
-- 23 doelsoorten in training dataset
+- Docker stack draait: `mammal-mediamtx`, `mammal-watcher`, `mammal-review-api`, `mammalradar-web`
 - Clip opslag: `clips/confirmed` en `clips/uncertain`
 - Review workflow: `web/review.html` + `review_api.py` (Flask→FastAPI)
 - Feedback loop: `feedback_collector.py` voor active learning
 - MQTT publisher: detecties → n8n
-- Docker stack: `docker-compose.yml` met alle services
 - mammalradar.net landing page via Cloudflare tunnel
+- RTSP amplitude normalisatie fix (PR #23/#24) — meer detecties
 
 ### 🔄 In ontwikkeling (Stap 4)
-- MammalCNN model verbeteren met meer trainingsdata
-- Balanced dataset: 10s clips per soort
-- Retraining pipeline via `retrain.sh`
+- MammalCNN opnieuw trainen — vorig model was corrupt (sklearn Pipeline opgeslagen als .pt)
+- Trainingsdata staat op USB `/mnt/usb/prepared/` — 15 soorten, 20.192 WAV clips
+- Training draait via: `docker run --rm -v /mnt/usb:/mnt/usb:ro ...` in `screen -S training`
+- Training script: `training/train.py` — CPU-only, class-weighted loss, augmentatie voor zeldzame soorten
+- `--max-per-species 500` — voorkomt dominantie van vulpes_vulpes (10.618 clips!)
+
+### ⚠️ Bekende problemen (opgelost tijdens sessie 2026-05-15)
+- `mammal_cnn.pt` was corrupt: sklearn Pipeline opgeslagen onder PyTorch bestandsnaam
+- Oorzaak: GPT/Sonnet sessie die alles herinstalleerde zonder expliciete opdracht
+- Oplossing: opnieuw trainen met `training/train.py` op USB-data
+- Stub classifier draaide → random output (wolf, bever, wezel binnen 1 minuut = nep)
 
 ### ⏳ Nog niet begonnen
 - InfluxDB/Grafana (Stap 6)
 - n8n automations (Stap 7)
+- BirdNET embeddings als transfer learning basis (Stap 5, voor veldkastjes)
+
+---
+
+## Trainingsdata (USB `/mnt/usb`)
+
+| Locatie | Inhoud |
+|---------|--------|
+| `/mnt/usb/prepared/` | WAV clips per soort (index.csv aanwezig) |
+| `/mnt/usb/audio/` | Ruwe audio per soort |
+| `/mnt/usb/features/` | 1024-dim .npy features (sklearn formaat, niet gebruikt door CNN) |
+
+### Verdeling clips per soort (prepared/)
+| Soort | Clips | Status |
+|-------|-------|--------|
+| vulpes_vulpes | 10.618 | ⚠️ dominant → gecapped op 500 |
+| sus_scrofa | 4.673 | ⚠️ veel |
+| sciurus_vulgaris | 1.542 | ok |
+| capreolus_capreolus | 1.542 | ok |
+| canis_lupus | 523 | ok |
+| canis_aureus | 403 | ok |
+| cervus_elaphus | 392 | ok |
+| martes_foina | 93 | ⚠️ weinig → augmentatie |
+| lutra_lutra | 90 | ⚠️ weinig → augmentatie |
+| lynx_lynx | 83 | ⚠️ weinig → augmentatie |
+| eliomys_quercinus | 67 | 🚨 kritiek → altijd augmentatie |
+| felis_silvestris | 53 | 🚨 kritiek |
+| castor_fiber | 48 | 🚨 kritiek |
+| martes_martes | 33 | 🚨 kritiek |
+| meles_meles | 32 | 🚨 kritiek |
 
 ---
 
@@ -66,26 +103,31 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 | Parquet column load + index checkpoint (PR #9) | NatureLM dataset te groot voor streaming scan |
 | Pending-review feedback loop (PR #17) | Low-data soorten kunnen via menselijke review verbeteren |
 | Review API beveiligd (PR #22) | Review surface was onbeschermd toegankelijk |
-| 23 soorten balanced 10s clips (PR #22) | Van 12 naar 23 soorten uitgebreid |
+| --max-per-species 500 in training | Voorkomt dat vos (10.618 clips) het model domineert |
+| Model opslaan met class_mapping + mel_params | classifier.py verwacht deze keys — zonder dit laadt model niet |
+| Nooit AI (GPT/Sonnet) zonder toezicht laten herinstalleren | Sessie 15-05-2026: alles kapot gemaakt, sklearn model als .pt opgeslagen |
 
 ---
 
-## Doelsoorten (23 NL zoogdieren)
+## Doelsoorten (15 soorten in huidige training)
 
 | Soort | Wetenschappelijk | Prioriteit | Alert |
 |---|---|---|---|
 | Vos | Vulpes vulpes | Hoog | ✅ |
+| Wolf | Canis lupus | Zeer hoog | ✅ |
+| Goudjakhals | Canis aureus | Hoog | ✅ |
+| Boommarter | Martes martes | Hoog | ✅ |
+| Steenmarter | Martes foina | Middel | ✅ |
 | Das | Meles meles | Hoog | ✅ |
 | Otter | Lutra lutra | Zeer hoog | ✅ |
-| Wolf | Canis lupus | Zeer hoog | ✅ |
-| Wezel | Mustela nivalis | Hoog | ✅ |
-| Hermelijn | Mustela erminea | Hoog | ✅ |
-| Steenmarter | Martes foina | Middel | ✅ |
-| Boommarter | Martes martes | Hoog | ✅ |
 | Ree | Capreolus capreolus | Middel | ❌ |
 | Edelhert | Cervus elaphus | Middel | ❌ |
 | Wild zwijn | Sus scrofa | Laag | ❌ |
 | Bever | Castor fiber | Hoog | ✅ |
+| Lynx | Lynx lynx | Zeer hoog | ✅ |
+| Eikelmuis | Eliomys quercinus | Middel | ❌ |
+| Wilde kat | Felis silvestris | Hoog | ✅ |
+| Rode eekhoorn | Sciurus vulgaris | Laag | ❌ |
 
 ---
 
@@ -108,15 +150,16 @@ mammal-watcher/
 ├── Dockerfile.api         # Review API container
 ├── startup.sh             # Reboot-safe startup script
 ├── mediamtx.yml           # MediaMTX configuratie
+├── models/                # Model bestanden (mammal_cnn.pt hier opslaan!)
 ├── dataset/               # Trainingsdata scripts en downloaders
-├── training/              # CNN training code
+├── training/              # CNN training code (train.py)
 ├── web/index.html         # MammalRadar landing page
 ├── web/review.html        # Review UI voor needs_review clips
 ├── web/                   # Overige web assets (nginx)
 ├── n8n/                   # n8n workflow exports
 ├── systemd/               # systemd unit files
 ├── tests/                 # Pytest tests
-├── docs/                  # Extra documentatie
+├── docs/                  # Extra documentatie (COMMANDS.md)
 └── feedback/              # Opgeslagen feedback clips
 ```
 
@@ -131,12 +174,39 @@ mammal-watcher/
 
 ---
 
+## Training commando (referentie)
+
+```bash
+# Start altijd in screen!
+screen -S training
+
+docker run --rm \
+  -v /mnt/usb:/mnt/usb:ro \
+  -v $(pwd)/models:/app/models \
+  -v $(pwd)/species_config.json:/app/species_config.json:ro \
+  -v $(pwd)/training:/app/training:ro \
+  mammal-watcher-mammal-watcher \
+  python3 training/train.py \
+    --data /mnt/usb/prepared/index.csv \
+    --output /app/models \
+    --epochs 30 \
+    --batch-size 16 \
+    --num-workers 2 \
+    --max-per-species 500 \
+    --augment
+```
+
+---
+
 ## Volgende logische stappen (Stap 4 afronden)
-1. MammalCNN model valideren: accuracy per soort meten
-2. Retraining pipeline testen met nieuwe feedback clips
-3. MQTT → n8n koppeling testen met echte detecties
-4. Dan: InfluxDB/Grafana opzetten (Stap 6)
-5. Dan: n8n Telegram alerts configureren (Stap 7)
+1. ⏳ Wacht op training resultaat (duurt ~1-2 uur CPU)
+2. Valideer model: accuracy per soort bekijken in training output
+3. Docker stack herstarten zodat nieuw model geladen wordt
+4. Controleer logs: `docker logs -f mammal-watcher` — echte detecties?
+5. Dan: MQTT → n8n koppeling testen met echte detecties
+6. Dan: InfluxDB/Grafana opzetten (Stap 6)
+7. Dan: n8n Telegram alerts configureren (Stap 7)
+8. Toekomst: BirdNET embeddings als transfer learning basis (veldkastjes)
 
 ---
 
@@ -161,3 +231,5 @@ mammal-watcher/
 - PR #22: Review beveiligd + 23 soorten + balanced 10s clips
 - PR #23: Classifier input normalisatie fix (lage RTSP amplitudes)
 - PR #24: RTSP amplitude fix + review UI bugfixes + CONTEXT.md update
+- Commit: COMMANDS.md toegevoegd (iteratief cheatsheet)
+- Commit: CONTEXT.md + COMMANDS.md update na debug sessie 15-05-2026
