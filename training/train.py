@@ -30,7 +30,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader, Dataset, Subset, random_split
+from torch.utils.data import DataLoader, Dataset, Subset, WeightedRandomSampler, random_split
 from tqdm import tqdm
 
 MEL_PARAMS: dict[str, int] = {
@@ -427,6 +427,13 @@ def _compute_class_weights(
     return torch.tensor(weights, dtype=torch.float32, device=device)
 
 
+def _compute_sample_weights(labels: list[int]) -> torch.DoubleTensor:
+    """Bereken sample-gewichten voor WeightedRandomSampler (inverse klassefrequentie)."""
+    class_counts = Counter(labels)
+    sample_weights = [1.0 / class_counts[label] for label in labels]
+    return torch.DoubleTensor(sample_weights)
+
+
 def train_model(
     model: nn.Module,
     train_loader: DataLoader,
@@ -561,8 +568,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-per-species",
         type=int,
-        default=1000,
-        help="Maximum aantal chunks per soort in training (voorkomt dominantie van vos/wild zwijn)",
+        default=99999,
+        help="Optioneel veiligheidsnet: maximum aantal chunks per soort in training",
     )
     parser.add_argument(
         "--augment",
@@ -614,13 +621,20 @@ def main() -> None:
 
     # Trainingsset inpakken met augmentatie en klasse-gewichten berekenen
     augmented_train = AugmentedTrainDataset(train_set, augment=args.augment)
-    class_weights = _compute_class_weights(augmented_train.get_labels(), len(class_to_idx), device=device)
+    train_labels = augmented_train.get_labels()
+    class_weights = _compute_class_weights(train_labels, len(class_to_idx), device=device)
+    sampler = WeightedRandomSampler(
+        weights=_compute_sample_weights(train_labels),
+        num_samples=len(train_labels),
+        replacement=True,
+    )
     print("Data-augmentatie:", "ingeschakeld" if args.augment else "uitgeschakeld")
 
     train_loader = DataLoader(
         augmented_train,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=False,
+        sampler=sampler,
         num_workers=args.num_workers,
     )
     val_loader = DataLoader(
