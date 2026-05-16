@@ -16,7 +16,7 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 | 1 | ESP32 mic → RTSP stream → MediaMTX directe fan-out (ffmpeg bridge verwijderd) | ✅ WERKEND |
 | 2 | YAMNet pre-filter (bird/mammal/human/vehicle) | ✅ WERKEND (vervangen door MammalCNN in stap 4) |
 | 3 | EcoSound subcategorisatie | ⏳ UITGESTELD |
-| 4 | Eigen MammalCNN soortherkenning (15 soorten op USB, training loopt) | 🔄 IN ONTWIKKELING |
+| 4 | BirdNET embeddings + PyTorch MLP soortherkenning (15 soorten) | 🔄 IN ONTWIKKELING |
 | 5 | NatureLM zero-shot geavanceerde AI laag / BirdNET embeddings | ⏳ TOEKOMST |
 | 6 | InfluxDB + Grafana dashboards | ⏳ TOEKOMST |
 | 7 | n8n workflows (Telegram, Mastodon, dagrapport) | ⏳ TOEKOMST |
@@ -38,11 +38,11 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 - RTSP amplitude normalisatie fix (PR #23/#24) — meer detecties
 
 ### 🔄 In ontwikkeling (Stap 4)
-- MammalCNN opnieuw trainen — vorig model was corrupt (sklearn Pipeline opgeslagen als .pt)
-- Trainingsdata staat op USB `/mnt/usb/prepared/` — 15 soorten, 20.192 WAV clips
-- Training draait via: `docker run --rm -v /mnt/usb:/mnt/usb:ro ...` in `screen -S training`
-- Training script: `training/train.py` — CPU-only, class-weighted loss, augmentatie voor zeldzame soorten
-- `--max-per-species 500` — voorkomt dominantie van vulpes_vulpes (10.618 clips!)
+- **BirdNET embeddings + PyTorch MLP** pipeline (vervangt CNN from scratch)
+- sklearn verwijderd uit training pipeline — puur PyTorch + numpy
+- Stap 1: `training/extract_embeddings.py` — BirdNET embeddings uitrekenen (~30 min voor 20k clips)
+- Stap 2: `training/train_mlp.py` — kleine MLP trainen op embeddings (~5-10 min op CPU)
+- MammalCNN (`mammal_cnn.pt`) blijft als fallback geladen via `mammal_watcher.py`
 
 ### ⚠️ Bekende problemen (opgelost tijdens sessie 2026-05-15)
 - `mammal_cnn.pt` was corrupt: sklearn Pipeline opgeslagen onder PyTorch bestandsnaam
@@ -106,6 +106,8 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 | --max-per-species 500 in training | Voorkomt dat vos (10.618 clips) het model domineert |
 | Model opslaan met class_mapping + mel_params | classifier.py verwacht deze keys — zonder dit laadt model niet |
 | Nooit AI (GPT/Sonnet) zonder toezicht laten herinstalleren | Sessie 15-05-2026: alles kapot gemaakt, sklearn model als .pt opgeslagen |
+| sklearn vervangen door pure PyTorch/numpy | Minder dependencies, consistenter met rest van stack |
+| BirdNET embeddings als feature extractor | Transfer learning: rijke audio representaties, weinig trainingsdata nodig per soort |
 
 ---
 
@@ -177,7 +179,33 @@ mammal-watcher/
 ## Training commando (referentie)
 
 ```bash
-# Start altijd in screen!
+# BirdNET embeddings aanpak (aanbevolen — sneller en robuuster)
+
+# Stap 1: embeddings uitrekenen (eenmalig, ~30 min voor 20k clips)
+screen -S embeddings
+docker run --rm \
+  -v /mnt/usb:/mnt/usb \
+  -v $(pwd)/training:/app/training:ro \
+  mammal-watcher-mammal-watcher \
+  python3 training/extract_embeddings.py \
+    --data /mnt/usb/prepared/index.csv \
+    --embeddings-dir /mnt/usb/embeddings
+
+# Stap 2: MLP trainen op embeddings (~5-10 min op CPU!)
+screen -S training
+docker run --rm \
+  -v /mnt/usb:/mnt/usb:ro \
+  -v $(pwd)/models:/app/models \
+  -v $(pwd)/species_config.json:/app/species_config.json:ro \
+  -v $(pwd)/training:/app/training:ro \
+  mammal-watcher-mammal-watcher \
+  python3 training/train_mlp.py \
+    --embeddings-dir /mnt/usb/embeddings/embeddings_index.csv \
+    --output /app/models \
+    --epochs 100 \
+    --patience 10
+
+# CNN aanpak (fallback, nog steeds ondersteund)
 screen -S training
 
 docker run --rm \
@@ -199,14 +227,13 @@ docker run --rm \
 ---
 
 ## Volgende logische stappen (Stap 4 afronden)
-1. ⏳ Wacht op training resultaat (duurt ~1-2 uur CPU)
-2. Valideer model: accuracy per soort bekijken in training output
-3. Docker stack herstarten zodat nieuw model geladen wordt
+1. ⏳ Stap 1: BirdNET embeddings uitrekenen voor alle clips (`extract_embeddings.py`)
+2. ⏳ Stap 2: MLP trainen op embeddings (`train_mlp.py`) — ~5-10 min op CPU
+3. Docker stack herstarten zodat nieuw MLP model geladen wordt
 4. Controleer logs: `docker logs -f mammal-watcher` — echte detecties?
 5. Dan: MQTT → n8n koppeling testen met echte detecties
 6. Dan: InfluxDB/Grafana opzetten (Stap 6)
 7. Dan: n8n Telegram alerts configureren (Stap 7)
-8. Toekomst: BirdNET embeddings als transfer learning basis (veldkastjes)
 
 ---
 

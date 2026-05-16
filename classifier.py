@@ -415,3 +415,182 @@ class MammalCNNClassifier(BaseClassifier):
             "tier": int(tier),
             "model_version": self.MODEL_VERSION,
         }
+
+
+class BirdNetMLPClassifier(BaseClassifier):
+    """Classifier op basis van BirdNET embeddings + kleine PyTorch MLP (mammal_mlp.pt)."""
+
+    MODEL_VERSION = "birdnet-mlp-1.0"
+    TARGET_SR = 16000
+    EMBEDDING_DIM = 1024
+
+    def __init__(
+        self,
+        model_path: str = "models/mammal_mlp.pt",
+        min_confidence: float = 0.1,
+        species_csv_path: str = "species_mammals_nl.csv",
+    ) -> None:
+        import torch
+
+        self.min_confidence = float(min_confidence)
+        self._torch = torch
+        self._species_lookup = MammalCNNClassifier._load_species_lookup(species_csv_path)
+
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+        class_mapping = checkpoint["class_mapping"]
+        self._idx_to_class: dict[int, str] = {int(idx): str(slug) for idx, slug in class_mapping.items()}
+        self._input_dim: int = int(checkpoint.get("input_dim", self.EMBEDDING_DIM))
+
+        num_classes = len(self._idx_to_class)
+        self._model = self._build_model(self._input_dim, num_classes)
+        self._model.load_state_dict(checkpoint["model_state_dict"])
+        self._model.eval()
+
+        self._extract_fn = self._load_extractor()
+
+    @staticmethod
+    def _build_model(input_dim: int, num_classes: int):
+        import torch.nn as nn
+
+        class MammalMLP(nn.Module):
+            def __init__(self, in_dim: int, n_classes: int) -> None:
+                super().__init__()
+                self.net = nn.Sequential(
+                    nn.Linear(in_dim, 512),
+                    nn.BatchNorm1d(512),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(0.3),
+                    nn.Linear(512, 256),
+                    nn.BatchNorm1d(256),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(0.3),
+                    nn.Linear(256, n_classes),
+                )
+
+            def forward(self, x):
+                return self.net(x)
+
+        return MammalMLP(input_dim, num_classes)
+
+    def _load_extractor(self):
+        """Laad BirdNET feature extractor (birdnetlib of torchaudio fallback)."""
+        try:
+            from birdnetlib import Recording
+            from birdnetlib.analyzer import Analyzer
+
+            analyzer = Analyzer()
+
+            def extract_birdnet(audio: np.ndarray, sr: int) -> np.ndarray:
+                import os
+                import tempfile
+
+                import soundfile as sf
+
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                    tmp_path = tmp.name
+                samples = audio.astype(np.float32)
+                sf.write(tmp_path, samples, sr)
+                try:
+                    recording = Recording(analyzer, tmp_path, lat=52.0, lon=5.0, min_conf=0.0)
+                    recording.analyze()
+                    if recording.embeddings is not None and len(recording.embeddings) > 0:
+                        emb = np.mean(np.array(recording.embeddings, dtype=np.float32), axis=0)
+                    else:
+                        emb = np.zeros(self.EMBEDDING_DIM, dtype=np.float32)
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                return emb.reshape(self.EMBEDDING_DIM).astype(np.float32)
+
+            return extract_birdnet
+
+        except ImportError:
+            pass
+
+        # Torchaudio fallback
+        try:
+            import torchaudio
+
+            def extract_torchaudio(audio: np.ndarray, sr: int) -> np.ndarray:
+                waveform = self._torch.from_numpy(audio.astype(np.float32)).unsqueeze(0)
+                if sr != self.TARGET_SR:
+                    waveform = torchaudio.functional.resample(
+                        waveform, orig_freq=sr, new_freq=self.TARGET_SR
+                    )
+
+                mfcc_transform = torchaudio.transforms.MFCC(
+                    sample_rate=self.TARGET_SR, n_mfcc=40
+                )
+                mfcc = mfcc_transform(waveform)
+                mfcc_mean = mfcc.mean(dim=2).squeeze(0).numpy()
+                mfcc_std = mfcc.std(dim=2).squeeze(0).numpy()
+
+                mel_transform = torchaudio.transforms.MelSpectrogram(
+                    sample_rate=self.TARGET_SR, n_mels=64, n_fft=1024, hop_length=512
+                )
+                to_db = torchaudio.transforms.AmplitudeToDB(stype="power")
+                mel = to_db(mel_transform(waveform)).squeeze(0).numpy()
+                mel_mean = mel.mean(axis=1)
+                mel_std = mel.std(axis=1)
+
+                features = np.concatenate([mfcc_mean, mfcc_std, mel_mean, mel_std])
+                embedding = np.zeros(self.EMBEDDING_DIM, dtype=np.float32)
+                embedding[: len(features)] = features.astype(np.float32)
+                return embedding
+
+            return extract_torchaudio
+
+        except ImportError as exc:
+            raise RuntimeError(
+                "BirdNetMLPClassifier vereist birdnetlib of torchaudio als feature extractor."
+            ) from exc
+
+    def _resolve_species_meta(self, slug: str) -> tuple[str, str, str, int]:
+        scientific = MammalCNNClassifier._slug_to_scientific(slug)
+        row = self._species_lookup.get(scientific.lower(), {})
+        nl_name = str(row.get("nl_name", "")).strip() or slug.replace("_", " ")
+        en_name = str(row.get("en_name", "")).strip() or scientific
+        try:
+            tier = int(row.get("tier", 3))
+        except (TypeError, ValueError):
+            tier = 3
+        return scientific, nl_name, en_name, tier
+
+    def classify(self, audio: np.ndarray, sr: int) -> dict | None:
+        samples = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if samples.size == 0 or sr <= 0:
+            return None
+
+        peak = float(np.max(np.abs(samples)))
+        if peak > 0.0:
+            samples = samples / peak
+
+        try:
+            embedding = self._extract_fn(samples, sr)
+        except Exception:  # noqa: BLE001
+            return None
+
+        tensor = self._torch.from_numpy(embedding).unsqueeze(0)
+
+        with self._torch.no_grad():
+            logits = self._model(tensor)
+            probabilities = self._torch.softmax(logits, dim=1).squeeze(0)
+
+        best_score, best_idx = self._torch.max(probabilities, dim=0)
+        confidence = float(best_score.item())
+        if confidence < self.min_confidence:
+            return None
+
+        class_idx = int(best_idx.item())
+        slug = self._idx_to_class.get(class_idx, "unknown_species")
+        scientific, nl_name, en_name, tier = self._resolve_species_meta(slug)
+        return {
+            "species_scientific": scientific,
+            "species_nl": nl_name,
+            "species_en": en_name,
+            "confidence": round(float(np.clip(confidence, 0.0, 1.0)), 4),
+            "tier": int(tier),
+            "model_version": self.MODEL_VERSION,
+        }

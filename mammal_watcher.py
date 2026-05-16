@@ -29,7 +29,7 @@ import numpy as np
 import yaml
 import soundfile as sf
 
-from classifier import BaseClassifier, MammalCNNClassifier, StubClassifier, YAMNetClassifier
+from classifier import BaseClassifier, BirdNetMLPClassifier, MammalCNNClassifier, StubClassifier, YAMNetClassifier
 from feedback_collector import FeedbackCollector
 
 __version__ = "0.2.0"
@@ -274,6 +274,16 @@ def main() -> None:
         except Exception:  # noqa: BLE001
             logger.exception("YAMNet laden mislukt, gebruik stub fallback")
             classifier = StubClassifier()
+    elif model_name == "birdnet_mlp":
+        try:
+            classifier = BirdNetMLPClassifier(
+                model_path=cfg.get("classifier", {}).get("model_path", "models/mammal_mlp.pt"),
+                min_confidence=cfg.get("classifier", {}).get("min_confidence", 0.1),
+            )
+            logger.info("BirdNET-MLP model geladen (%s)", BirdNetMLPClassifier.MODEL_VERSION)
+        except Exception:  # noqa: BLE001
+            logger.exception("BirdNET-MLP laden mislukt, gebruik stub fallback")
+            classifier = StubClassifier()
     elif model_name == "mammal_cnn":
         try:
             classifier = MammalCNNClassifier(
@@ -284,6 +294,22 @@ def main() -> None:
         except Exception:  # noqa: BLE001
             logger.exception("MammalCNN laden mislukt, gebruik stub fallback")
             classifier = StubClassifier()
+    elif model_name == "auto":
+        # Probeer eerst het BirdNET-MLP model, fallback naar CNN, daarna stub
+        mlp_path = cfg.get("classifier", {}).get("mlp_model_path", "models/mammal_mlp.pt")
+        cnn_path = cfg.get("classifier", {}).get("model_path", "models/mammal_cnn.pt")
+        min_conf = cfg.get("classifier", {}).get("min_confidence", 0.1)
+        try:
+            classifier = BirdNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
+            logger.info("Auto: BirdNET-MLP model geladen (%s)", BirdNetMLPClassifier.MODEL_VERSION)
+        except Exception:  # noqa: BLE001
+            logger.info("Auto: BirdNET-MLP niet beschikbaar, probeer MammalCNN")
+            try:
+                classifier = MammalCNNClassifier(model_path=cnn_path, min_confidence=min_conf)
+                logger.info("Auto: MammalCNN model geladen")
+            except Exception:  # noqa: BLE001
+                logger.warning("Auto: geen model beschikbaar, gebruik stub fallback")
+                classifier = StubClassifier()
     else:
         logger.warning("Onbekend model '%s', gebruik stub als fallback", model_name)
         classifier = StubClassifier()

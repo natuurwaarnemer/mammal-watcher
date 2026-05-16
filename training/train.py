@@ -25,8 +25,6 @@ import numpy as np
 import soundfile as sf
 import torch
 import torchaudio
-from sklearn.metrics import confusion_matrix
-from sklearn.utils.class_weight import compute_class_weight
 from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -413,16 +411,19 @@ def _compute_class_weights(
 ) -> torch.Tensor:
     """Bereken gebalanceerde klasse-gewichten op basis van klassefrequentie.
 
+    Formule: weight[c] = total_samples / (n_present_classes * count[c])
     Klassen die niet in de trainingsset voorkomen krijgen gewicht 1.0.
     """
     label_array = np.array(labels)
     present_classes = np.unique(label_array)
-    partial_weights = compute_class_weight("balanced", classes=present_classes, y=label_array)
+    n_present = len(present_classes)
+    total = len(label_array)
 
     # Alle klassen op 1.0 initialiseren; ontbrekende klassen missen in de trainingsset
     weights = np.ones(num_classes, dtype=np.float32)
-    for cls, w in zip(present_classes, partial_weights):
-        weights[int(cls)] = float(w)
+    for cls in present_classes:
+        count = int(np.sum(label_array == cls))
+        weights[int(cls)] = total / (n_present * count)
 
     return torch.tensor(weights, dtype=torch.float32, device=device)
 
@@ -495,6 +496,18 @@ def train_model(
     return model, best_val_acc
 
 
+def _numpy_confusion_matrix(y_true: list[int], y_pred: list[int], num_classes: int) -> np.ndarray:
+    """Bereken een confusion matrix zonder sklearn.
+
+    Rijen zijn ware klassen, kolommen zijn voorspelde klassen.
+    """
+    cm = np.zeros((num_classes, num_classes), dtype=np.int64)
+    for t, p in zip(y_true, y_pred):
+        if 0 <= t < num_classes and 0 <= p < num_classes:
+            cm[t, p] += 1
+    return cm
+
+
 def evaluate_model(
     model: nn.Module,
     dataloader: DataLoader,
@@ -514,7 +527,8 @@ def evaluate_model(
         )
 
     indices = sorted(class_mapping.keys())
-    cm = confusion_matrix(labels, preds, labels=indices)
+    num_classes = max(indices) + 1
+    cm = _numpy_confusion_matrix(labels, preds, num_classes)
 
     per_species: dict[str, float] = {}
     for idx in indices:
