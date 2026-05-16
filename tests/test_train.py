@@ -189,6 +189,18 @@ def test_compute_class_weights_missing_class_gets_one() -> None:
     assert float(weights[2]) == pytest.approx(1.0)
 
 
+def test_compute_sample_weights_inverts_class_frequency() -> None:
+    _ = pytest.importorskip("torch")
+    _ = pytest.importorskip("torchaudio")
+    module = _load_module()
+
+    labels = [0, 0, 1, 2, 2, 2]
+    weights = module._compute_sample_weights(labels)
+
+    assert weights.dtype == module.torch.float64
+    assert weights.tolist() == pytest.approx([0.5, 0.5, 1.0, 1 / 3, 1 / 3, 1 / 3])
+
+
 def test_parse_args_augment_defaults_true() -> None:
     _ = pytest.importorskip("torch")
     _ = pytest.importorskip("torchaudio")
@@ -206,6 +218,7 @@ def test_parse_args_augment_defaults_true() -> None:
         _sys.argv = orig_argv
 
     assert args.augment is True
+    assert args.max_per_species == 99999
 
 
 def test_parse_args_no_augment_flag() -> None:
