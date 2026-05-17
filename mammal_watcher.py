@@ -397,6 +397,8 @@ def main() -> None:
         )
         if confidence < min_required_confidence:
             return
+        if species_scientific.lower() == "background":
+            return
 
         if confidence >= tier1_threshold:
             prediction["tier"] = 1
