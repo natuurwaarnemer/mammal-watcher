@@ -585,6 +585,9 @@ class BirdNetMLPClassifier(BaseClassifier):
 
         class_idx = int(best_idx.item())
         slug = self._idx_to_class.get(class_idx, "unknown_species")
+        # Background/ruis → geen detectie rapporteren
+        if slug == "background":
+            return None
         scientific, nl_name, en_name, tier = self._resolve_species_meta(slug)
         return {
             "species_scientific": scientific,

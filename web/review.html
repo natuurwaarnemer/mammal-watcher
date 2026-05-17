@@ -163,6 +163,7 @@
       let currentFilter = "all";
       let detections = [];
       let speciesOptions = null;
+      const reviewedPaths = new Set();
 
       const escapeHtml = (value) =>
         String(value ?? "").replace(/[&<>"']/g, (char) => (
@@ -232,6 +233,7 @@
       const markDone = async (item, card) => {
         card.classList.add("done");
         setTimeout(async () => {
+          reviewedPaths.add(item.clip_path);
           detections = detections.filter((row) => row.clip_path !== item.clip_path);
           render();
           await loadStats();
@@ -343,7 +345,8 @@
 
       const loadDetections = async () => {
         const resp = await fetch("/api/detections?limit=100");
-        detections = await resp.json();
+        const all = await resp.json();
+        detections = all.filter((d) => !reviewedPaths.has(d.clip_path));
         render();
       };
 
@@ -361,6 +364,11 @@
         emptyEl.hidden = false;
         emptyEl.textContent = "API niet bereikbaar.";
       });
+
+      // Auto-refresh elke 30 seconden
+      setInterval(async () => {
+        await Promise.all([loadStats(), loadDetections()]);
+      }, 30000);
     </script>
   </body>
 </html>

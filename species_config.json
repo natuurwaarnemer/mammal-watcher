@@ -164,6 +164,17 @@
       "priority": "very_high",
       "alert": true,
       "gbif_taxon_key": 2435098
+    },
+    {
+      "scientific": "background",
+      "nl": "achtergrond",
+      "en": "background noise",
+      "emoji": "🔇",
+      "family": "background",
+      "inaturalist_taxon_id": null,
+      "priority": "none",
+      "alert": false,
+      "gbif_taxon_key": null
     }
   ]
 }
