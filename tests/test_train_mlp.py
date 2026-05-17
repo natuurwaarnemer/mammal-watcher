@@ -133,6 +133,67 @@ def test_mlp_embedding_dataset(tmp_path: Path) -> None:
     assert label in (0, 1)
 
 
+def test_mlp_embedding_dataset_respects_max_per_species(tmp_path: Path) -> None:
+    _ = pytest.importorskip("torch")
+    module = _load_module()
+
+    rows = [
+        ("wolf1.npy", "Canis lupus"),
+        ("wolf2.npy", "Canis lupus"),
+        ("wolf3.npy", "Canis lupus"),
+        ("vos1.npy", "Vulpes vulpes"),
+    ]
+    for index, (name, _) in enumerate(rows):
+        emb = np.full(1024, index, dtype=np.float32)
+        np.save(str(tmp_path / name), emb)
+
+    index_path = tmp_path / "embeddings_index.csv"
+    with index_path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=["file", "species_scientific", "embedding_file"])
+        writer.writeheader()
+        for name, scientific in rows:
+            writer.writerow(
+                {
+                    "file": f"/some/{name.removesuffix('.npy')}.wav",
+                    "species_scientific": scientific,
+                    "embedding_file": str(tmp_path / name),
+                }
+            )
+
+    dataset = module.EmbeddingDataset(
+        index_csv=index_path,
+        class_to_idx={"canis_lupus": 0, "vulpes_vulpes": 1},
+        max_per_species=2,
+        seed=123,
+    )
+    dataset_same_seed = module.EmbeddingDataset(
+        index_csv=index_path,
+        class_to_idx={"canis_lupus": 0, "vulpes_vulpes": 1},
+        max_per_species=2,
+        seed=123,
+    )
+
+    assert len(dataset) == 3
+    assert dataset.samples_per_species == {"canis_lupus": 2, "vulpes_vulpes": 1}
+    assert dataset.samples == dataset_same_seed.samples
+
+
+def test_mlp_parse_args_max_per_species_default() -> None:
+    _ = pytest.importorskip("torch")
+    module = _load_module()
+
+    import sys as _sys
+
+    orig_argv = _sys.argv
+    try:
+        _sys.argv = ["train_mlp.py", "--embeddings-dir", "dummy.csv"]
+        args = module.parse_args()
+    finally:
+        _sys.argv = orig_argv
+
+    assert args.max_per_species == 500
+
+
 def test_mlp_save_model(tmp_path: Path) -> None:
     torch = pytest.importorskip("torch")
     module = _load_module()
@@ -141,6 +202,7 @@ def test_mlp_save_model(tmp_path: Path) -> None:
     training_info = {
         "samples_per_species": {"canis_lupus": 5},
         "total_samples": 5,
+        "max_per_species": 500,
         "trained_at": "2026-05-16T00:00:00+00:00",
     }
     model_path = module.save_model(
