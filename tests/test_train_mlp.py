@@ -192,6 +192,13 @@ def test_mlp_parse_args_max_per_species_default() -> None:
         _sys.argv = orig_argv
 
     assert args.max_per_species == 500
+    assert args.background_dir is None
+
+
+def test_mlp_target_species_includes_background() -> None:
+    _ = pytest.importorskip("torch")
+    module = _load_module()
+    assert module.TARGET_SPECIES[-1] == "background"
 
 
 def test_mlp_save_model(tmp_path: Path) -> None:

@@ -108,3 +108,32 @@ def test_birdnet_mlp_classify_with_mock_model() -> None:
     assert result["species_scientific"] == "Canis lupus"
     assert 0.0 <= result["confidence"] <= 1.0
     assert result["model_version"] == BirdNetMLPClassifier.MODEL_VERSION
+
+
+def test_birdnet_mlp_classify_returns_none_for_background_prediction() -> None:
+    torch = pytest.importorskip("torch")
+
+    class _FakeModel(torch.nn.Module):
+        def forward(self, x):
+            out = torch.zeros(x.shape[0], 2)
+            out[:, 1] = 10.0
+            return out
+
+    clf = BirdNetMLPClassifier.__new__(BirdNetMLPClassifier)
+    clf._torch = torch
+    clf.min_confidence = 0.1
+    clf.EMBEDDING_DIM = 8
+    clf.TARGET_SR = 16000
+    clf._idx_to_class = {0: "canis_lupus", 1: "background"}
+    clf._species_lookup = {}
+    clf._model = _FakeModel()
+    clf._model.eval()
+
+    def _fake_extract(audio: np.ndarray, sr: int) -> np.ndarray:
+        return np.zeros(8, dtype=np.float32)
+
+    clf._extract_fn = _fake_extract
+
+    audio = np.random.default_rng(1).random(16000).astype(np.float32) * 0.5
+    result = clf.classify(audio, sr=16000)
+    assert result is None

@@ -49,6 +49,7 @@ TARGET_SPECIES = [
     "eliomys_quercinus",
     "lynx_lynx",
     "felis_silvestris",
+    "background",
 ]
 
 
@@ -409,12 +410,26 @@ def parse_args() -> argparse.Namespace:
         default=str(repo_root / "species_config.json"),
         help="Pad naar species_config.json",
     )
+    parser.add_argument(
+        "--background-dir",
+        default=None,
+        help="Map met WAV-bestanden als background/ruis klasse (bijv. feedback/rejected/)",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.background_dir:
+        print(
+            f"ℹ️  Background clips opgegeven: {args.background_dir}\n"
+            f"   Voeg deze eerst toe aan embeddings_index.csv via:\n"
+            f"   python training/extract_embeddings.py --data {args.background_dir} "
+            f"--embeddings-dir /mnt/usb/embeddings --species background\n"
+            f"   Daarna opnieuw trainen.",
+            file=sys.stderr,
+        )
 
     index_path = Path(args.embeddings_dir)
     output_dir = Path(args.output)
