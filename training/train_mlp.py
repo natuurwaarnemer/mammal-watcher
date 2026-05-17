@@ -15,6 +15,7 @@ import argparse
 import copy
 import csv
 import json
+import random
 import re
 import sys
 from collections import Counter
@@ -90,12 +91,15 @@ class EmbeddingDataset(Dataset[tuple[torch.Tensor, int]]):
         self,
         index_csv: Path,
         class_to_idx: dict[str, int],
+        *,
+        max_per_species: int | None = None,
+        seed: int = 42,
     ) -> None:
         self.class_to_idx = class_to_idx
         self.samples: list[tuple[Path, int]] = []
         self.samples_per_species: dict[str, int] = {}
 
-        counts: dict[str, int] = {}
+        sampled_by_species: dict[str, list[tuple[Path, int]]] = {}
         with index_csv.open(newline="", encoding="utf-8") as fh:
             for row in csv.DictReader(fh):
                 species = _species_slug(row["species_scientific"])
@@ -104,10 +108,18 @@ class EmbeddingDataset(Dataset[tuple[torch.Tensor, int]]):
                 emb_path = Path(row["embedding_file"])
                 if not emb_path.exists():
                     continue
-                self.samples.append((emb_path, self.class_to_idx[species]))
-                counts[species] = counts.get(species, 0) + 1
+                sampled_by_species.setdefault(species, []).append((emb_path, self.class_to_idx[species]))
 
-        self.samples_per_species = counts
+        rng = random.Random(seed)
+        for species in sorted(sampled_by_species):
+            candidates = sampled_by_species[species]
+            if max_per_species is not None and len(candidates) > max_per_species:
+                selected = rng.sample(candidates, max_per_species)
+                selected.sort(key=lambda item: str(item[0]))
+            else:
+                selected = candidates
+            self.samples.extend(selected)
+            self.samples_per_species[species] = len(selected)
 
         if not self.samples:
             raise ValueError("Geen geldige embedding-bestanden gevonden in index.")
@@ -387,6 +399,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64, help="Batchgrootte")
     parser.add_argument("--num-workers", type=int, default=0, help="Aantal DataLoader workers")
     parser.add_argument(
+        "--max-per-species",
+        type=int,
+        default=500,
+        help="Maximum aantal clips per soort (voorkomt dominantie)",
+    )
+    parser.add_argument(
         "--species-file",
         default=str(repo_root / "species_config.json"),
         help="Pad naar species_config.json",
@@ -406,12 +424,20 @@ def main() -> None:
     if not index_path.exists():
         print(f"Embeddings-index niet gevonden: {index_path}", file=sys.stderr)
         sys.exit(1)
+    if args.max_per_species <= 0:
+        print("--max-per-species moet groter zijn dan 0", file=sys.stderr)
+        sys.exit(1)
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
     class_to_idx, idx_to_class = load_class_mapping(species_file)
-    dataset = EmbeddingDataset(index_path, class_to_idx)
+    dataset = EmbeddingDataset(
+        index_path,
+        class_to_idx,
+        max_per_species=args.max_per_species,
+        seed=args.seed,
+    )
 
     train_idx, val_idx, test_idx = _split_indices(len(dataset), seed=args.seed)
 
@@ -475,6 +501,7 @@ def main() -> None:
             "val": len(val_idx),
             "test": len(test_idx),
         },
+        "max_per_species": args.max_per_species,
         "trained_at": datetime.now(tz=timezone.utc).isoformat(),
     }
     model_path = save_model(model, output_dir, idx_to_class, best_val_acc, training_info)
