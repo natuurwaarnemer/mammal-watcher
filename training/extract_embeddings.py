@@ -28,7 +28,7 @@ EMBEDDING_DIM = 1024
 # ---------------------------------------------------------------------------
 
 def _load_birdnet_extractor():
-    """Laad de BirdNET feature extractor via birdnetlib of torch fallback."""
+    """Laad de BirdNET feature extractor via birdnetlib."""
     try:
         from birdnetlib import Recording
         from birdnetlib.analyzer import Analyzer
@@ -52,53 +52,10 @@ def _load_birdnet_extractor():
 
         return extract_fn, "birdnetlib"
 
-    except ImportError:
-        pass
-
-    # Fallback: torchaudio-gebaseerde MFCC-vector als placeholder
-    try:
-        import soundfile as sf
-        import torch
-        import torchaudio
-
-        def extract_fn(wav_path: str) -> np.ndarray:  # type: ignore[misc]
-            audio, sr = sf.read(wav_path, dtype="float32")
-            if audio.ndim > 1:
-                audio = np.mean(audio, axis=1)
-
-            waveform = torch.from_numpy(audio).unsqueeze(0)
-            if sr != TARGET_SR:
-                waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=TARGET_SR)
-
-            # MFCC (40 coefficients, 25 frames) opvullen tot 1024-dim
-            mfcc_transform = torchaudio.transforms.MFCC(
-                sample_rate=TARGET_SR,
-                n_mfcc=40,
-            )
-            mfcc = mfcc_transform(waveform)  # (1, 40, T)
-            mfcc_mean = mfcc.mean(dim=2).squeeze(0).numpy()  # (40,)
-            mfcc_std = mfcc.std(dim=2).squeeze(0).numpy()     # (40,)
-
-            # Mel-spectrogram statistieken voor extra features
-            mel_transform = torchaudio.transforms.MelSpectrogram(
-                sample_rate=TARGET_SR, n_mels=64, n_fft=1024, hop_length=512
-            )
-            to_db = torchaudio.transforms.AmplitudeToDB(stype="power")
-            mel = to_db(mel_transform(waveform)).squeeze(0).numpy()  # (64, T)
-            mel_mean = mel.mean(axis=1)   # (64,)
-            mel_std = mel.std(axis=1)     # (64,)
-
-            features = np.concatenate([mfcc_mean, mfcc_std, mel_mean, mel_std])  # 208-dim
-            # Opvullen met nullen tot 1024-dim
-            embedding = np.zeros(EMBEDDING_DIM, dtype=np.float32)
-            embedding[: len(features)] = features.astype(np.float32)
-            return embedding
-
-        return extract_fn, "torchaudio-fallback"
-
     except ImportError as exc:
         raise RuntimeError(
-            "Geen feature extractor beschikbaar. Installeer birdnetlib of torchaudio."
+            "BirdNET extractor niet beschikbaar. Installeer birdnetlib met TensorFlow Lite "
+            "ondersteuning (tensorflow-cpu)."
         ) from exc
 
 
