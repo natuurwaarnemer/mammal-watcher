@@ -1,11 +1,43 @@
 # 🦊 MammalRadar — Projectcontext voor Copilot
 
 ## Wat is dit project?
-MammalRadar (repository: `mammal-watcher`) is een volledig **lokaal draaiend systeem** dat Nederlandse zoogdieren herkent op basis van geluid. Het systeem luistert 24/7 via een ESP32-microfoon, classificeert geluiden met een eigen PyTorch CNN-model en stuurt alerts via MQTT → n8n → Telegram.
+MammalRadar (repository: `mammal-watcher`) is een volledig **lokaal draaiend systeem** dat Nederlandse zoogdieren herkent op basis van geluid. Het systeem luistert 24/7 via een ESP32-microfoon, classificeert geluiden met een eigen PyTorch MLP-model (BirdNET embeddings) en stuurt alerts via MQTT → n8n → Telegram.
 
 Eigenaar: @natuurwaarnemer  
 Taal: Python  
 Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Grafana)
+
+---
+
+## 🎯 Visie
+
+MammalRadar is meer dan een detector. Het doel is een **volledig ecologisch monitoringssysteem** voor Nederlandse zoogdieren:
+
+1. **Detectie** — welk zoogdier is er?
+2. **Plausibiliteitslaag** — klopt deze detectie gezien de locatie en het seizoen?
+3. **Gedragsanalyse** — wat doet het dier? (alarm, territorium, voortplanting)
+4. **Tijdspatronen** — wanneer is welke soort actief? (nacht, seizoen, weer)
+5. **Citizen science** — onverwachte detecties melden aan Zoogdiervereniging/NDFF
+
+### 🗺️ Plausibiliteitslaag (toekomstige stap)
+Elke detectie wordt getoetst aan verspreidingsdata:
+- **Bronnen**: NDFF, Zoogdiervereniging atlasdata, waarneming.nl API, GBIF (al in stack)
+- **Logica**:
+  - Normale detectie + bekende locatie → gewone alert
+  - Onverwachte locatie + lage confidence → waarschijnlijk fout-positief → wegfilteren
+  - Onverwachte locatie + hoge confidence (>0.95) → 🚨 **mogelijk wetenschappelijk interessant** → melding Zoogdiervereniging
+- **Voorbeeld**: eikelmuis in Drenthe (alleen Zuid-Limburg bekend) met conf=0.91 → bijzondere melding
+
+---
+
+## Werkregels (belangrijk voor Copilot)
+
+| Type wijziging | Aanpak |
+|---|---|
+| Content (README, CONTEXT.md, docs, HTML tekst) | Direct commit op main ✅ |
+| Code (`.py`, `Dockerfile`, `docker-compose.yml`, scripts) | PR verplicht 🔄 |
+| Na `git pull` met codewijzigingen | Altijd `docker compose build --no-cache mammal-watcher` |
+| Nooit | AI zonder toezicht laten herinstalleren/rebuilden |
 
 ---
 
@@ -16,14 +48,14 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 | 1 | ESP32 mic → RTSP stream → MediaMTX directe fan-out (ffmpeg bridge verwijderd) | ✅ WERKEND |
 | 2 | YAMNet pre-filter (bird/mammal/human/vehicle) | ✅ WERKEND (vervangen door MammalCNN in stap 4) |
 | 3 | EcoSound subcategorisatie | ⏳ UITGESTELD |
-| 4 | BirdNET embeddings + PyTorch MLP soortherkenning (15 soorten) | 🔄 IN ONTWIKKELING |
+| 4 | BirdNET embeddings + PyTorch MLP soortherkenning (15 soorten) | ✅ WERKEND (val_acc 0.49) |
 | 5 | NatureLM zero-shot geavanceerde AI laag / BirdNET embeddings | ⏳ TOEKOMST |
 | 6 | InfluxDB + Grafana dashboards | ⏳ TOEKOMST |
 | 7 | n8n workflows (Telegram, Mastodon, dagrapport) | ⏳ TOEKOMST |
 
 ---
 
-## Huidige status (per 2026-05-15)
+## Huidige status (per 2026-05-17)
 
 ### ✅ Wat werkt
 - RTSP audio pipeline: ESP32 → MediaMTX directe fan-out → `rtsp://localhost:8554/mic`
@@ -36,24 +68,43 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 - MQTT publisher: detecties → n8n
 - mammalradar.net landing page via Cloudflare tunnel
 - RTSP amplitude normalisatie fix (PR #23/#24) — meer detecties
+- **BirdNET MLP model getraind** (PR #25): val_acc 0.49, 20k embeddings, 15 soorten
 
-### 🔄 In ontwikkeling (Stap 4)
-- **BirdNET embeddings + PyTorch MLP** pipeline (vervangt CNN from scratch)
-- sklearn verwijderd uit training pipeline — puur PyTorch + numpy
-- Stap 1: `training/extract_embeddings.py` — BirdNET embeddings uitrekenen (~30 min voor 20k clips)
-- Stap 2: `training/train_mlp.py` — kleine MLP trainen op embeddings (~5-10 min op CPU)
-- MammalCNN (`mammal_cnn.pt`) blijft als fallback geladen via `mammal_watcher.py`
+### 📊 MLP model resultaten (2026-05-17, --max-per-species 500)
+| Soort | Accuracy | Opmerking |
+|---|---|---|
+| castor_fiber | 1.00 | 🏆 |
+| lynx_lynx | 0.92 | ✅ |
+| felis_silvestris | 0.86 | ✅ |
+| eliomys_quercinus | 0.86 | ✅ |
+| lutra_lutra | 0.83 | ✅ |
+| martes_foina | 0.81 | ✅ |
+| martes_martes | 0.71 | ✅ |
+| meles_meles | 0.75 | ✅ |
+| canis_aureus | 0.58 | ⚠️ verward met wolf/vos |
+| canis_lupus | 0.58 | ⚠️ verward met vos/aureus |
+| capreolus_capreolus | 0.50 | ⚠️ |
+| cervus_elaphus | 0.55 | ⚠️ |
+| sciurus_vulgaris | 0.52 | ⚠️ |
+| vulpes_vulpes | 0.36 | ⚠️ oorzaak onbekend — veel variatie in geluiden? |
+| sus_scrofa | 0.09 | 🚨 verward met capreolus |
+| **Overall** | **0.49** | Van 0.20 → 0.49 na --max-per-species fix |
 
-### ⚠️ Bekende problemen (opgelost tijdens sessie 2026-05-15)
-- `mammal_cnn.pt` was corrupt: sklearn Pipeline opgeslagen onder PyTorch bestandsnaam
-- Oorzaak: GPT/Sonnet sessie die alles herinstalleerde zonder expliciete opdracht
-- Oplossing: opnieuw trainen met `training/train.py` op USB-data
-- Stub classifier draaide → random output (wolf, bever, wezel binnen 1 minuut = nep)
+### 🔄 In ontwikkeling
+- Docker image rebuild na PR #25 (train_mlp.py --max-per-species fix)
+- Container laadt nog stub fallback — rebuild in progress
+- MQTT → n8n koppeling testen met echte detecties
+
+### ⚠️ Bekende aandachtspunten
+- `mammal_cnn.pt` was corrupt (sessie 15-05-2026): sklearn model als .pt opgeslagen door AI zonder toezicht
+- Vos accuracy laag (0.36): oorzaak onbekend, **niet speculeren over databron** — nog uit te zoeken
+- Wild zwijn accuracy laag (0.09): verward met ree — mogelijk akoestische overlap
+- Tierstimmen Archiv: toestemming aangevraagd per mail, **niet gebruiken tot bevestiging**
 
 ### ⏳ Nog niet begonnen
 - InfluxDB/Grafana (Stap 6)
 - n8n automations (Stap 7)
-- BirdNET embeddings als transfer learning basis (Stap 5, voor veldkastjes)
+- Plausibiliteitslaag NDFF/GBIF (Stap 5)
 
 ---
 
@@ -63,7 +114,8 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 |---------|--------|
 | `/mnt/usb/prepared/` | WAV clips per soort (index.csv aanwezig) |
 | `/mnt/usb/audio/` | Ruwe audio per soort |
-| `/mnt/usb/features/` | 1024-dim .npy features (sklearn formaat, niet gebruikt door CNN) |
+| `/mnt/usb/features/` | 1024-dim .npy features (sklearn formaat, niet gebruikt door MLP) |
+| `/mnt/usb/embeddings/` | BirdNET .npy embeddings (20.208 bestanden) + embeddings_index.csv |
 
 ### Verdeling clips per soort (prepared/)
 | Soort | Clips | Status |
@@ -108,6 +160,7 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 | Nooit AI (GPT/Sonnet) zonder toezicht laten herinstalleren | Sessie 15-05-2026: alles kapot gemaakt, sklearn model als .pt opgeslagen |
 | sklearn vervangen door pure PyTorch/numpy | Minder dependencies, consistenter met rest van stack |
 | BirdNET embeddings als feature extractor | Transfer learning: rijke audio representaties, weinig trainingsdata nodig per soort |
+| Tierstimmen Archiv niet gebruiken | Toestemming aangevraagd maar nog niet verkregen — in afwachting |
 
 ---
 
@@ -138,11 +191,11 @@ Hardware: ESP32, HP630/T630 (n8nserver), NUC2 (BirdNET-Pi), HP640 (InfluxDB/Graf
 ```
 mammal-watcher/
 ├── mammal_watcher.py      # Hoofdproces: RTSP consumer + classificatie loop
-├── classifier.py          # MammalCNN model + inferentie
+├── classifier.py          # MammalCNN/MLP model + inferentie
 ├── rtsp_consumer.py       # RTSP audio inlezen (direct vanaf MediaMTX fan-out)
 ├── mqtt_publisher.py      # Detecties publiceren via MQTT
 ├── feedback_collector.py  # Active learning feedback loop
-├── review_api.py          # Flask API voor clip review
+├── review_api.py          # FastAPI voor clip review
 ├── retrain.sh             # Retraining pipeline script
 ├── config.yaml            # Configuratie (drempelwaarden, MQTT, etc.)
 ├── species_config.json    # Per-soort configuratie
@@ -152,9 +205,9 @@ mammal-watcher/
 ├── Dockerfile.api         # Review API container
 ├── startup.sh             # Reboot-safe startup script
 ├── mediamtx.yml           # MediaMTX configuratie
-├── models/                # Model bestanden (mammal_cnn.pt hier opslaan!)
+├── models/                # Model bestanden (mammal_mlp.pt, mammal_cnn.pt fallback)
 ├── dataset/               # Trainingsdata scripts en downloaders
-├── training/              # CNN training code (train.py)
+├── training/              # MLP + CNN training code
 ├── web/index.html         # MammalRadar landing page
 ├── web/review.html        # Review UI voor needs_review clips
 ├── web/                   # Overige web assets (nginx)
@@ -173,6 +226,7 @@ mammal-watcher/
 - **iNaturalist** — observaties met geluid
 - **GBIF** — taxon-gekoppelde audio
 - **Eigen veldopnames** via `clips/` map (active learning)
+- **Tierstimmen Archiv** — toestemming aangevraagd, nog in afwachting
 
 ---
 
@@ -203,11 +257,11 @@ docker run --rm \
     --embeddings-dir /mnt/usb/embeddings/embeddings_index.csv \
     --output /app/models \
     --epochs 100 \
-    --patience 10
+    --patience 10 \
+    --max-per-species 500
 
 # CNN aanpak (fallback, nog steeds ondersteund)
 screen -S training
-
 docker run --rm \
   -v /mnt/usb:/mnt/usb:ro \
   -v $(pwd)/models:/app/models \
@@ -226,25 +280,36 @@ docker run --rm \
 
 ---
 
-## Volgende logische stappen (Stap 4 afronden)
-1. ⏳ Stap 1: BirdNET embeddings uitrekenen voor alle clips (`extract_embeddings.py`)
-2. ⏳ Stap 2: MLP trainen op embeddings (`train_mlp.py`) — ~5-10 min op CPU
-3. Docker stack herstarten zodat nieuw MLP model geladen wordt
-4. Controleer logs: `docker logs -f mammal-watcher` — echte detecties?
-5. Dan: MQTT → n8n koppeling testen met echte detecties
-6. Dan: InfluxDB/Grafana opzetten (Stap 6)
-7. Dan: n8n Telegram alerts configureren (Stap 7)
+## Volgende logische stappen
+1. ✅ BirdNET embeddings uitgerekend (20.208 clips)
+2. ✅ MLP getraind (val_acc 0.49, --max-per-species 500)
+3. 🔄 Docker image rebuilden zodat nieuw MLP model geladen wordt
+4. ⏳ Controleer logs: `docker logs -f mammal-watcher` — echte detecties?
+5. ⏳ MQTT → n8n koppeling testen met echte detecties
+6. ⏳ InfluxDB/Grafana opzetten (Stap 6)
+7. ⏳ n8n Telegram alerts configureren (Stap 7)
+8. ⏳ Plausibiliteitslaag NDFF/GBIF bouwen (Stap 5)
 
 ---
 
 ## Toekomstige ideeën (nog niet opgepakt)
 
+### Plausibiliteitslaag
+- NDFF + Zoogdiervereniging atlasdata per soort per km-hok
+- waarneming.nl API voor recente meldingen in regio
+- Logica: onverwachte locatie + hoge confidence → citizen science melding
+- Scenario: eikelmuis in Drenthe met conf>0.95 → melding Zoogdiervereniging
+
+### Gedragsanalyse & tijdspatronen
+- Tijdstip activiteit per soort bijhouden (nachts, seizoen)
+- Weersdata koppelen (meer activiteit na regen?)
+- Triangulatie via meerdere kastjes (waar precies?)
+- Individu-herkenning (zelfde wolf terugzien?)
+
 ### Review page verbeteringen
 - **"Opnieuw trainen" knop** op `web/review.html` → triggert `retrain.sh` via nieuwe API endpoint
-- **Teller** hoeveel keer opnieuw getraind is (bijhouden in `models/retrain_log.json` of sidecar)
-  - Bijv: `retrain #3 — 2026-05-16 — val_acc: 0.74 — 312 nieuwe feedback clips`
-  - Zichtbaar op review page zodat je voortgang ziet
-- Idee: drempelwaarde instellen → automatisch retrain starten als X nieuwe confirmed clips beschikbaar zijn
+- **Teller** hoeveel keer opnieuw getraind is (bijhouden in `models/retrain_log.json`)
+- Automatisch retrain starten als X nieuwe confirmed clips beschikbaar zijn
 
 ### Veldkastjes (toekomst)
 - BirdNET embeddings als transfer learning basis → minder data nodig per soort
@@ -274,5 +339,6 @@ docker run --rm \
 - PR #22: Review beveiligd + 23 soorten + balanced 10s clips
 - PR #23: Classifier input normalisatie fix (lage RTSP amplitudes)
 - PR #24: RTSP amplitude fix + review UI bugfixes + CONTEXT.md update
+- PR #25: train_mlp.py --max-per-species parameter toegevoegd
 - Commit: COMMANDS.md toegevoegd (iteratief cheatsheet)
-- Commit: CONTEXT.md + COMMANDS.md update na debug sessie 15-05-2026
+- Commit: CONTEXT.md updates (visie, plausibiliteitslaag, werkregels, status 17-05-2026)
