@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import numpy as np
 import pytest
 
@@ -137,3 +138,20 @@ def test_birdnet_mlp_classify_returns_none_for_background_prediction() -> None:
     audio = np.random.default_rng(1).random(16000).astype(np.float32) * 0.5
     result = clf.classify(audio, sr=16000)
     assert result is None
+
+
+def test_birdnet_mlp_load_extractor_hard_fails_without_birdnetlib(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "birdnetlib" or name.startswith("birdnetlib."):
+            raise ImportError("birdnetlib ontbreekt")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    clf = BirdNetMLPClassifier.__new__(BirdNetMLPClassifier)
+    with pytest.raises(RuntimeError, match="tensorflow-cpu"):
+        clf._load_extractor()

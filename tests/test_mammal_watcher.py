@@ -24,107 +24,12 @@ import yaml
 # Classifier tests
 # ---------------------------------------------------------------------------
 
-class TestStubClassifier:
-    """Tests voor de StubClassifier stub-implementatie."""
+def test_base_classifier_is_abstract() -> None:
+    """BaseClassifier mag niet direct geïnstantieerd worden."""
+    from classifier import BaseClassifier
 
-    def test_import(self) -> None:
-        """Importeer de classifier module zonder fouten."""
-        from classifier import StubClassifier  # noqa: F401
-
-    def test_returns_required_keys(self) -> None:
-        """classify() moet alle verplichte sleutels bevatten."""
-        from classifier import StubClassifier
-
-        clf = StubClassifier()
-        audio = np.zeros(48000, dtype=np.float32)
-        result = clf.classify(audio, sr=48000)
-
-        required = {
-            "species_scientific",
-            "species_nl",
-            "species_en",
-            "confidence",
-            "tier",
-            "model_version",
-        }
-        assert required.issubset(result.keys()), (
-            f"Ontbrekende sleutels: {required - result.keys()}"
-        )
-
-    def test_confidence_in_range(self) -> None:
-        """confidence moet tussen 0 en 1 liggen."""
-        from classifier import StubClassifier
-
-        clf = StubClassifier()
-        for amplitude in [0.0, 0.01, 0.05, 0.10, 0.50, 1.0]:
-            audio = np.full(4800, amplitude, dtype=np.float32)
-            result = clf.classify(audio, sr=48000)
-            assert 0.0 <= result["confidence"] <= 1.0, (
-                f"confidence {result['confidence']} buiten bereik voor amplitude {amplitude}"
-            )
-
-    def test_tier_is_int(self) -> None:
-        """tier moet een int zijn (1, 2 of 3)."""
-        from classifier import StubClassifier
-
-        clf = StubClassifier()
-        audio = np.random.default_rng(42).random(48000).astype(np.float32)
-        result = clf.classify(audio, sr=48000)
-        assert isinstance(result["tier"], int)
-        assert result["tier"] in (1, 2, 3)
-
-    def test_deterministic(self) -> None:
-        """Zelfde audio → zelfde resultaat."""
-        from classifier import StubClassifier
-
-        clf = StubClassifier()
-        audio = np.full(8000, 0.05, dtype=np.float32)
-        r1 = clf.classify(audio, sr=48000)
-        r2 = clf.classify(audio, sr=48000)
-        assert r1 == r2
-
-    def test_base_classifier_is_abstract(self) -> None:
-        """BaseClassifier mag niet direct geïnstantieerd worden."""
-        from classifier import BaseClassifier
-
-        with pytest.raises(TypeError):
-            BaseClassifier()  # type: ignore[abstract]
-
-    def test_model_version_is_stub(self) -> None:
-        """StubClassifier moet 'stub' in de model_version string hebben."""
-        from classifier import StubClassifier
-
-        clf = StubClassifier()
-        audio = np.zeros(4800, dtype=np.float32)
-        result = clf.classify(audio, sr=48000)
-        assert "stub" in result["model_version"].lower()
-
-    def test_model_version_is_stub_02(self) -> None:
-        """StubClassifier model_version moet stub-0.2 zijn."""
-        from classifier import StubClassifier
-
-        clf = StubClassifier()
-        assert clf.MODEL_VERSION == "stub-0.2"
-
-    def test_tier1_rewilding_bias(self) -> None:
-        """~10% van inputs geeft een tier-1 rewilding soort terug."""
-        from classifier import StubClassifier
-
-        clf = StubClassifier()
-        tier1_rewilding = {s for s, _, _ in clf._TIER1_REWILDING}
-        tier1_count = 0
-        total = 100
-        for i in range(total):
-            # Varieer de audio per iteratie voor diverse hashes
-            audio = np.full(4800, 0.05, dtype=np.float32)
-            audio[0] = float(i) / total  # lichte variatie
-            result = clf.classify(audio, sr=48000)
-            if result["species_scientific"] in tier1_rewilding:
-                tier1_count += 1
-        # Verwacht ~10%, accepteer 3–25%
-        assert 3 <= tier1_count <= 25, (
-            f"tier-1 rewilding bias buiten verwacht bereik: {tier1_count}/100"
-        )
+    with pytest.raises(TypeError):
+        BaseClassifier()  # type: ignore[abstract]
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +59,7 @@ class TestConfigLoading:
                 "broker": "localhost",
                 "port": 1883,
             },
-            "classifier": {"model": "stub", "min_confidence": 0.5},
+            "classifier": {"model": "mammal_cnn", "min_confidence": 0.5},
             "species_csv": "./species_mammals_nl.csv",
             "logging": {"level": "DEBUG"},
         }
@@ -361,7 +266,7 @@ def test_main_skips_background_detection_without_logging_or_publishing(
         "species_nl": "Background",
         "species_en": "Background",
         "confidence": 0.99,
-        "model_version": "stub-0.2",
+        "model_version": "mammal-cnn-1.0",
     }
     publisher = MagicMock()
     args = argparse.Namespace(
@@ -372,7 +277,7 @@ def test_main_skips_background_detection_without_logging_or_publishing(
     cfg = {
         "logging": {"level": "INFO"},
         "classifier": {
-            "model": "stub",
+            "model": "mammal_cnn",
             "min_confidence": 0.4,
             "tier1_threshold": 0.75,
             "tier2_threshold": 0.5,
@@ -390,7 +295,7 @@ def test_main_skips_background_detection_without_logging_or_publishing(
         patch.object(mammal_watcher, "load_config", return_value=cfg),
         patch.object(mammal_watcher, "_setup_logging"),
         patch.object(mammal_watcher, "load_species_index", return_value={}),
-        patch.object(mammal_watcher, "StubClassifier", return_value=fake_classifier),
+        patch.object(mammal_watcher, "MammalCNNClassifier", return_value=fake_classifier),
         patch("mqtt_publisher.MQTTPublisher", return_value=publisher),
         patch.object(mammal_watcher, "build_payload") as build_payload,
         patch.object(mammal_watcher.ClipSaver, "save") as save_clip,

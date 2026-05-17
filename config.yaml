@@ -14,7 +14,6 @@ classifier:
   min_confidence: 0.30
   tier1_threshold: 0.75
   tier2_threshold: 0.5
-  yamnet_min_score: 0.1
 
 clips:
   enabled: true
