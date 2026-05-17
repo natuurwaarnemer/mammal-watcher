@@ -181,18 +181,23 @@ MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-MammalRadar builds on the shoulders of great open-source projects:
+MammalRadar stands on the shoulders of two projects that made it possible:
 
-- [Sukecz/esp32-birdnet-mic](https://github.com/Sukecz/esp32-birdnet-mic) 
-  — ESP32 I2S RTSP microphone firmware ← de man die het startte! 🎤
-- [BirdNET-Go](https://github.com/tphakala/birdnet-go) 
-  — bird detection inspiration and parallel detector
-- [MediaMTX](https://github.com/bluenviron/mediamtx) 
-  — RTSP relay
-- [NatureLM](https://github.com/earthspecies/NatureLM-audio) 
-  — behaviour interpretation
-- [GBIF](https://www.gbif.org/) 
-  — ecological presence data
+- [BirdNET-Go](https://github.com/tphakala/birdnet-go) by **@tphakala**
+  — the project that started it all 🐦 A complete, polished open-source bird detection system that proved real-time audio AI on consumer hardware is possible. MammalRadar is essentially "what if we did this for mammals?"
+
+- [Sukecz/esp32-birdnet-mic](https://github.com/Sukecz/esp32-birdnet-mic) by **@Sukecz**
+  — built an ESP32 I2S microphone specifically to feed audio into BirdNET-Go 🎤 That same firmware is what MammalRadar uses as its field microphone today.
+
+And the broader ecosystem it builds on:
+
+- [MediaMTX](https://github.com/bluenviron/mediamtx)
+  — RTSP relay that makes fan-out to multiple consumers possible
+- [NatureLM](https://github.com/earthspecies/NatureLM-audio)
+  — behaviour interpretation and audio AI research
+- [GBIF](https://www.gbif.org/)
+  — ecological presence data for plausibility validation
+
 ---
 
 ## Current Development Setup
