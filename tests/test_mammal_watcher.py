@@ -6,6 +6,7 @@ Voert geen echte audio-files in en maakt geen netwerk-calls.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import os
@@ -343,6 +344,67 @@ class TestSpeciesCSV:
                     found.add(row["scientific_name"])
         missing = expected - found
         assert not missing, f"Ontbrekende rewilding-soorten in CSV: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# Main processing tests
+# ---------------------------------------------------------------------------
+
+def test_main_skips_background_detection_without_logging_or_publishing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import mammal_watcher
+
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = {
+        "species_scientific": "Background",
+        "species_nl": "Background",
+        "species_en": "Background",
+        "confidence": 0.99,
+        "model_version": "stub-0.2",
+    }
+    publisher = MagicMock()
+    args = argparse.Namespace(
+        config="config.yaml",
+        dry_run=False,
+        no_rtsp=True,
+    )
+    cfg = {
+        "logging": {"level": "INFO"},
+        "classifier": {
+            "model": "stub",
+            "min_confidence": 0.4,
+            "tier1_threshold": 0.75,
+            "tier2_threshold": 0.5,
+        },
+        "species_csv": "./species_mammals_nl.csv",
+        "rtsp": {"url": "rtsp://localhost:8554/mic"},
+        "clips": {"clips_dir": str(tmp_path / "clips"), "enabled": True},
+        "feedback": {"enabled": False, "feedback_dir": str(tmp_path / "feedback")},
+        "mqtt": {"enabled": True, "broker": "localhost", "port": 1883},
+        "n8n": {"enabled": False},
+    }
+
+    with (
+        patch.object(mammal_watcher, "parse_args", return_value=args),
+        patch.object(mammal_watcher, "load_config", return_value=cfg),
+        patch.object(mammal_watcher, "_setup_logging"),
+        patch.object(mammal_watcher, "load_species_index", return_value={}),
+        patch.object(mammal_watcher, "StubClassifier", return_value=fake_classifier),
+        patch("mqtt_publisher.MQTTPublisher", return_value=publisher),
+        patch.object(mammal_watcher, "build_payload") as build_payload,
+        patch.object(mammal_watcher.ClipSaver, "save") as save_clip,
+        patch.object(mammal_watcher.logger, "info") as log_info,
+    ):
+        mammal_watcher.main()
+
+    fake_classifier.classify.assert_called_once()
+    build_payload.assert_not_called()
+    save_clip.assert_not_called()
+    publisher.publish.assert_not_called()
+    publisher.publish_pending.assert_not_called()
+    assert all("Gedetecteerd:" not in call.args[0] for call in log_info.call_args_list)
+    assert capsys.readouterr().out == ""
 
 
 # ---------------------------------------------------------------------------
