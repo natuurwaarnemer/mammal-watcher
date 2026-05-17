@@ -5,10 +5,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Open Source](https://img.shields.io/badge/open--source-%E2%9D%A4-brightgreen.svg)](https://github.com/natuurwaarnemer/mammal-watcher)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/natuurwaarnemer)
 
 ---
 
-It started as a personal challenge: train a model that recognises mammals by their sound. But why stop at detection? MammalRadar grew into a complete open-source ecosystem — from a cheap field device to ecological AI — accessible to anyone, anywhere in the world. For less than the cost of a day out, you can deploy a self-learning wildlife listening station that connects the forest to the cloud.
+It started as a personal challenge: train a model that recognises mammals by their sound. But why stop at detection? MammalRadar grew into a complete open-source ecosystem — from a cheap field device to a self-learning AI that understands *why* an animal is there.
 
 ---
 
@@ -156,9 +157,17 @@ If you can solder a microphone and run a Docker container, you can deploy Mammal
 
 ---
 
+## Support This Project
+
+MammalRadar is built in spare time, driven by a passion for wildlife and open technology. If you find it useful, a coffee is always appreciated! ☕
+
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/natuurwaarnemer)
+
+---
+
 ## Contributing
 
-MammalRadar is open and welcoming. Whether you improve the model, add a new species dataset, build a better field enclosure, or translate the dashboard — every contribution matters. Open an issue to start a conversation, or submit a pull request directly.
+MammalRadar is open and welcoming. Whether you improve the model, add a new species dataset, build a better field enclosure, or translate the dashboard — every contribution matters. Open an issue or pull request — all skill levels welcome.
 
 No contribution is too small. The goal is to make wildlife monitoring accessible to everyone.
 
@@ -232,7 +241,7 @@ ESP32-C6 (192.168.2.20:8554/audio)
 ```
 
 **Why ffmpeg-bridge + `source: publisher`?**
-The ESP32 firmware accepts only one RTSP client at a time. MediaMTX's built-in RTSP client caused `unexpected interleaved frame` errors with the ESP32 firmware. Using ffmpeg as a pull/push bridge solves this: it pulls the stream from the ESP32 and pushes it to MediaMTX (`source: publisher`), which then fans the stream out to multiple consumers (BirdNET-Go and mammal-watcher).
+The ESP32 firmware accepts only one RTSP client at a time. MediaMTX's built-in RTSP client caused `unexpected interleaved frame` errors with the ESP32 firmware. Using ffmpeg as a pull/push bridge works around this limitation.
 
 ### Quick Start
 
@@ -291,7 +300,7 @@ docker compose ps
 
 #### ESP32 refuses connection / rtsp-bridge crash-loops
 
-The ESP32 firmware accepts **only one RTSP client at a time**. If BirdNET-Go is still connected directly to `rtsp://192.168.2.20:8554/audio` when rtsp-bridge tries to connect, the ESP32 drops one connection and rtsp-bridge enters a restart loop.
+The ESP32 firmware accepts **only one RTSP client at a time**. If BirdNET-Go is still connected directly to `rtsp://192.168.2.20:8554/audio` when rtsp-bridge tries to connect, the ESP32 drops one of them.
 
 **First-time startup — order matters:**
 
@@ -312,4 +321,4 @@ This is **harmless**. The ESP32 sends 1460-byte RTP packets; MediaMTX automatica
 
 ## Voor Nederlandstalige gebruikers
 
-MammalRadar is een volledig open-source ecosysteem voor akoestische wildlife monitoring — van een goedkoop veldkastje (±€25) tot zelflerend AI-model. Het project begon als een persoonlijke uitdaging om zoogdieren te herkennen aan hun geluid, en groeide uit tot een complete oplossing die iedereen — van boswachter tot scholier — kan inzetten om wildlife te monitoren, overal ter wereld.
+MammalRadar is een volledig open-source ecosysteem voor akoestische wildlife monitoring — van een goedkoop veldkastje (±€25) tot zelflerend AI-model. Het project begon als een persoonlijke uitdaging en groeide uit tot een compleet platform voor iedereen die natuur wil monitoren.
