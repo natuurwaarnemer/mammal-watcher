@@ -6,57 +6,78 @@ Gebruik:
         --data /mnt/usb/prepared/index.csv \
         --embeddings-dir /mnt/usb/embeddings
 
-Output: één .npy bestand per clip (1024-dim float32 vector) en embeddings_index.csv.
+Output: één .npy bestand per clip (6522-dim float32 vector) en embeddings_index.csv.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import sys
 from pathlib import Path
 
+import librosa
 import numpy as np
+import tensorflow as tf
 
 
-TARGET_SR = 16000
-EMBEDDING_DIM = 1024
+SAMPLE_RATE = 48000
+CHUNK_SAMPLES = 144000
+EMBEDDING_DIM = 6522
+OUTPUT_TENSOR_INDEX = 546
+DEFAULT_MODEL_PATH = (
+    "/usr/local/lib/python3.11/site-packages/birdnetlib/models/analyzer/"
+    "BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite"
+)
 
 
-# ---------------------------------------------------------------------------
-# BirdNET feature extractor
-# ---------------------------------------------------------------------------
+def _load_interpreter(model_path: str) -> tuple[tf.lite.Interpreter, int]:
+    """Laad één TFLite interpreter voor alle bestanden."""
+    interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    input_index = int(interpreter.get_input_details()[0]["index"])
+    return interpreter, input_index
 
-def _load_birdnet_extractor():
-    """Laad de BirdNET feature extractor via birdnetlib."""
-    try:
-        from birdnetlib import Recording
-        from birdnetlib.analyzer import Analyzer
 
-        analyzer = Analyzer()
+def _extract_embedding_from_audio(
+    audio: np.ndarray,
+    interpreter: tf.lite.Interpreter,
+    input_index: int,
+) -> np.ndarray:
+    """Bereken gemiddelde embedding over 3s chunks."""
+    if len(audio) == 0:
+        return np.zeros(EMBEDDING_DIM, dtype=np.float32)
 
-        def extract_fn(wav_path: str) -> np.ndarray:
-            recording = Recording(
-                analyzer,
-                wav_path,
-                lat=52.0,
-                lon=5.0,
-                min_conf=0.0,
-            )
-            recording.analyze()
-            if recording.embeddings is not None and len(recording.embeddings) > 0:
-                emb = np.mean(np.array(recording.embeddings, dtype=np.float32), axis=0)
-            else:
-                emb = np.zeros(EMBEDDING_DIM, dtype=np.float32)
-            return emb.reshape(EMBEDDING_DIM)
+    embeddings: list[np.ndarray] = []
+    for start in range(0, len(audio), CHUNK_SAMPLES):
+        chunk = audio[start : start + CHUNK_SAMPLES]
+        if len(chunk) < CHUNK_SAMPLES:
+            chunk = np.pad(chunk, (0, CHUNK_SAMPLES - len(chunk)))
+        chunk = chunk.astype(np.float32, copy=False)
 
-        return extract_fn, "birdnetlib"
+        interpreter.set_tensor(input_index, np.array([chunk], dtype=np.float32))
+        interpreter.invoke()
+        tensor = interpreter.get_tensor(OUTPUT_TENSOR_INDEX).copy()
+        embeddings.append(tensor.reshape(EMBEDDING_DIM))
 
-    except ImportError as exc:
-        raise RuntimeError(
-            "BirdNET extractor niet beschikbaar. Installeer birdnetlib met TensorFlow Lite "
-            "ondersteuning (tensorflow-cpu)."
-        ) from exc
+    if not embeddings:
+        return np.zeros(EMBEDDING_DIM, dtype=np.float32)
+    return np.mean(np.vstack(embeddings), axis=0).astype(np.float32)
+
+
+def _extract_embedding_for_file(
+    wav_path: Path,
+    interpreter: tf.lite.Interpreter,
+    input_index: int,
+) -> np.ndarray:
+    audio, _ = librosa.load(
+        str(wav_path),
+        sr=SAMPLE_RATE,
+        mono=True,
+        res_type="kaiser_fast",
+    )
+    return _extract_embedding_from_audio(audio, interpreter, input_index)
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +91,11 @@ def parse_args() -> argparse.Namespace:
         "--embeddings-dir",
         required=True,
         help="Uitvoermap voor .npy embedding bestanden",
+    )
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL_PATH,
+        help="Pad naar BirdNET TFLite model",
     )
     return parser.parse_args()
 
@@ -91,8 +117,13 @@ def main() -> None:
         def tqdm(it, **kwargs):  # type: ignore[misc]
             return it
 
-    extract_fn, backend = _load_birdnet_extractor()
-    print(f"Feature extractor: {backend}")
+    try:
+        interpreter, input_index = _load_interpreter(args.model)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Kon TFLite model niet laden ({args.model}): {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Feature extractor: tflite ({args.model})")
 
     rows: list[dict[str, str]] = []
     with data_path.open(newline="", encoding="utf-8") as fh:
@@ -106,7 +137,6 @@ def main() -> None:
         species = row.get("species_scientific", "unknown")
 
         # Sla bestandsnaam op als hash van het pad
-        import hashlib
         path_hash = hashlib.md5(str(wav_path).encode()).hexdigest()[:16]  # noqa: S324
         embedding_file = embeddings_dir / f"{path_hash}.npy"
 
@@ -126,7 +156,7 @@ def main() -> None:
             continue
 
         try:
-            embedding = extract_fn(str(wav_path))
+            embedding = _extract_embedding_for_file(wav_path, interpreter, input_index)
         except Exception as exc:  # noqa: BLE001
             print(f"Fout bij {wav_path}: {exc}", file=sys.stderr)
             continue

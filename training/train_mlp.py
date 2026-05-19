@@ -31,7 +31,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from tqdm import tqdm
 
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = 6522
 MODEL_FILENAME = "mammal_mlp.pt"
 TARGET_SPECIES = [
     "vulpes_vulpes",
@@ -49,7 +49,6 @@ TARGET_SPECIES = [
     "eliomys_quercinus",
     "lynx_lynx",
     "felis_silvestris",
-    "background",
 ]
 
 

@@ -25,11 +25,11 @@ def test_mlp_forward_pass_works() -> None:
     torch = pytest.importorskip("torch")
     module = _load_module()
 
-    model = module.MammalMLP(input_dim=1024, num_classes=15)
-    dummy = torch.randn(4, 1024)
+    model = module.MammalMLP(input_dim=module.EMBEDDING_DIM, num_classes=len(module.TARGET_SPECIES))
+    dummy = torch.randn(4, module.EMBEDDING_DIM)
     output = model(dummy)
 
-    assert output.shape == (4, 15)
+    assert output.shape == (4, len(module.TARGET_SPECIES))
 
 
 def test_mlp_compute_class_weights_shape() -> None:
@@ -100,7 +100,7 @@ def test_mlp_embedding_dataset(tmp_path: Path) -> None:
 
     # Maak dummy embedding bestanden aan
     for name in ["wolf.npy", "vos.npy"]:
-        emb = np.zeros(1024, dtype=np.float32)
+        emb = np.zeros(module.EMBEDDING_DIM, dtype=np.float32)
         np.save(str(tmp_path / name), emb)
 
     index_path = tmp_path / "embeddings_index.csv"
@@ -129,7 +129,7 @@ def test_mlp_embedding_dataset(tmp_path: Path) -> None:
 
     assert len(dataset) == 2
     emb, label = dataset[0]
-    assert emb.shape == (1024,)
+    assert emb.shape == (module.EMBEDDING_DIM,)
     assert label in (0, 1)
 
 
@@ -144,7 +144,7 @@ def test_mlp_embedding_dataset_respects_max_per_species(tmp_path: Path) -> None:
         ("vos1.npy", "Vulpes vulpes"),
     ]
     for index, (name, _) in enumerate(rows):
-        emb = np.full(1024, index, dtype=np.float32)
+        emb = np.full(module.EMBEDDING_DIM, index, dtype=np.float32)
         np.save(str(tmp_path / name), emb)
 
     index_path = tmp_path / "embeddings_index.csv"
@@ -195,17 +195,17 @@ def test_mlp_parse_args_max_per_species_default() -> None:
     assert args.background_dir is None
 
 
-def test_mlp_target_species_includes_background() -> None:
+def test_mlp_target_species_excludes_background() -> None:
     _ = pytest.importorskip("torch")
     module = _load_module()
-    assert module.TARGET_SPECIES[-1] == "background"
+    assert "background" not in module.TARGET_SPECIES
 
 
 def test_mlp_save_model(tmp_path: Path) -> None:
     torch = pytest.importorskip("torch")
     module = _load_module()
 
-    model = module.MammalMLP(input_dim=1024, num_classes=15)
+    model = module.MammalMLP(input_dim=module.EMBEDDING_DIM, num_classes=len(module.TARGET_SPECIES))
     training_info = {
         "samples_per_species": {"canis_lupus": 5},
         "total_samples": 5,
@@ -222,6 +222,6 @@ def test_mlp_save_model(tmp_path: Path) -> None:
 
     checkpoint = torch.load(str(model_path), map_location="cpu", weights_only=False)
     assert checkpoint["model_type"] == "mlp"
-    assert checkpoint["input_dim"] == 1024
+    assert checkpoint["input_dim"] == module.EMBEDDING_DIM
     assert checkpoint["val_accuracy"] == pytest.approx(0.85)
     assert checkpoint["training_info"] == training_info
