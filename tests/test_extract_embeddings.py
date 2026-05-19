@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import builtins
 import importlib.util
 from pathlib import Path
 
-import pytest
+import numpy as np
 
 
 def _load_module():
@@ -18,18 +17,40 @@ def _load_module():
     return module
 
 
-def test_load_birdnet_extractor_hard_fails_without_birdnetlib(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+class _FakeInterpreter:
+    def __init__(self) -> None:
+        self.invoke_count = 0
+        self.tensor = np.zeros((1, 6522), dtype=np.float32)
+
+    def set_tensor(self, _index: int, _value: np.ndarray) -> None:
+        pass
+
+    def invoke(self) -> None:
+        self.invoke_count += 1
+        self.tensor.fill(float(self.invoke_count))
+
+    def get_tensor(self, _index: int) -> np.ndarray:
+        return self.tensor
+
+
+def test_extract_embedding_from_audio_averages_chunks_and_uses_copy() -> None:
     module = _load_module()
-    original_import = builtins.__import__
+    interpreter = _FakeInterpreter()
+    audio = np.ones(module.CHUNK_SAMPLES + 123, dtype=np.float32)
 
-    def _fake_import(name, *args, **kwargs):
-        if name == "birdnetlib" or name.startswith("birdnetlib."):
-            raise ImportError("birdnetlib ontbreekt")
-        return original_import(name, *args, **kwargs)
+    embedding = module._extract_embedding_from_audio(audio, interpreter, 0)
 
-    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    assert interpreter.invoke_count == 2
+    assert embedding.shape == (module.EMBEDDING_DIM,)
+    assert np.allclose(embedding, np.full(module.EMBEDDING_DIM, 1.5, dtype=np.float32))
 
-    with pytest.raises(RuntimeError, match="tensorflow-cpu"):
-        module._load_birdnet_extractor()
+
+def test_extract_embedding_from_audio_empty_returns_zero_vector() -> None:
+    module = _load_module()
+    interpreter = _FakeInterpreter()
+
+    embedding = module._extract_embedding_from_audio(np.array([], dtype=np.float32), interpreter, 0)
+
+    assert interpreter.invoke_count == 0
+    assert embedding.shape == (module.EMBEDDING_DIM,)
+    assert np.count_nonzero(embedding) == 0
