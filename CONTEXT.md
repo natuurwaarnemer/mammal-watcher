@@ -240,7 +240,7 @@ docker run --rm -v /mnt/usb:/mnt/usb mammal-watcher-mammal-watcher \
 
 | Component | Doel | Prijs |
 |---|---|---|
-| Arduino Nicla Voice | NDP120 + mic, edge model | ~€47 |
+| Arduino Nicla Voice | NDP120 + mic, edge model | ~€86 (NL prijs incl. BTW) |
 | ESP32-WROOM-32 devboard | WiFi bridge + audio buffer | ~€8 |
 | Micro SD module + 32GB kaart | Audio snippets opslaan | ~€10 |
 | LiPo 3.7V 3000mAh | Stroom | ~€10 |
