@@ -207,3 +207,69 @@ docker run --rm -v /mnt/usb:/mnt/usb mammal-watcher-mammal-watcher \
 
 2. Pas `EMBEDDING_DIM` aan in `training/train_mlp.py`
 3. PR aanmaken → gebruiker merget → gebruiker hertraint → logs checken op detecties
+
+---
+
+## 🛒 Hardware — wat bestellen
+
+### Architectuur veldkastje
+```
+[Omgeving / geluid]
+        ↓
+[Nicla Voice]
+  - NDP120 + mic
+  - Edge Impulse model A (soort + confidence)
+        ↓ UART: {"species":"meles_meles","conf":0.87}
+[MCU / Node]
+  - ESP32 of LilyGo T-SIM7600E
+  - GSM/4G modem
+  - SD (audio-buffer)
+        ↓
+[GSM netwerk]
+        ↓
+[T630 / Server]
+  - Ontvangst API / MQTT
+  - Opslag audio-snippets
+  - NatureLM (model B: gedragsanalyse)
+        ↓
+[HA / n8n]
+  - Alerts, logging, visualisatie
+```
+
+### Fase 1 — Prototype (WiFi, thuis/tuin testen)
+
+| Component | Doel | Prijs |
+|---|---|---|
+| Arduino Nicla Voice | NDP120 + mic, edge model | ~€47 |
+| ESP32-WROOM-32 devboard | WiFi bridge + audio buffer | ~€8 |
+| Micro SD module + 32GB kaart | Audio snippets opslaan | ~€10 |
+| LiPo 3.7V 3000mAh | Stroom | ~€10 |
+| TP4056 charger module | Laden via USB | ~€2 |
+| Dupont/JST kabels | Verbindingen | ~€5 |
+| **Totaal fase 1** | | **~€82** |
+
+### Fase 2 — Veld (GSM, waterproof, autonoom)
+
+Bovenop fase 1 (vervang losse ESP32 door LilyGo):
+
+| Component | Doel | Prijs |
+|---|---|---|
+| LilyGo T-SIM7600E | ESP32 + 4G in één board — vervangt losse ESP32 | ~€35 |
+| Simbase SIM | Pay-per-MB, NL/EU dekking | ~€5 + gebruik |
+| Zonnepaneel 5W + laadregelaar | Onbeperkt autonoom in veld | ~€15 |
+| IP67 behuizing 150x100x75mm | Weatherproof kastje | ~€12 |
+| Kabelwartels M12 | Waterdicht kabelinvoer | ~€5 |
+| Windkap voor microfoon | Windruis onderdrukken | ~€4 |
+| **Extra fase 2** | | **~€76** |
+
+**Let op:** LilyGo T-SIM7600E vervangt de losse ESP32 uit fase 1 — niet dubbel bestellen.
+
+### Verbinding Nicla Voice ↔ ESP32
+- Protocol: **UART** (TX/RX) — betrouwbaarder dan BLE voor continue werking
+- Nicla Voice stuurt bij detectie: `{"species":"meles_meles","conf":0.87,"trigger":true}`
+- ESP32 slaat bijbehorend audioclip op SD op + stuurt pakket door via WiFi/4G
+
+### Edge Impulse
+Toolchain voor Nicla Voice model training. Gratis tier is ruim voldoende.
+Workflow: trainingsdata uploaden → model trainen → deployen naar Nicla Voice.
+Aparte toolchain van de Python/PyTorch server-pipeline.
