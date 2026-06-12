@@ -21,7 +21,7 @@ def test_load_species_reads_gbif_taxon_keys_from_config() -> None:
 
     species = module._load_species(repo_root / "species_config.json")
     assert species
-    assert len(species) == 15
+    assert len(species) == 17
 
     by_scientific = {s["scientific"]: s["gbif_taxon_key"] for s in species}
     assert "Canis lupus" in by_scientific
