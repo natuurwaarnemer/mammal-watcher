@@ -35,6 +35,7 @@ DEFAULT_MODEL_PATH = (
 def _load_interpreter(model_path: str) -> tuple[tf.lite.Interpreter, int]:
     """Laad één TFLite interpreter voor alle bestanden."""
     interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.resize_tensor_input(0, [1, 144000])
     interpreter.allocate_tensors()
     input_index = int(interpreter.get_input_details()[0]["index"])
     return interpreter, input_index
