@@ -24,8 +24,8 @@ import tensorflow as tf
 
 SAMPLE_RATE = 48000
 CHUNK_SAMPLES = 144000
-EMBEDDING_DIM = 6522
-OUTPUT_TENSOR_INDEX = 546
+EMBEDDING_DIM = 1024
+OUTPUT_TENSOR_INDEX = 545
 DEFAULT_MODEL_PATH = (
     "/usr/local/lib/python3.11/site-packages/birdnetlib/models/analyzer/"
     "BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite"
@@ -97,6 +97,11 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_MODEL_PATH,
         help="Pad naar BirdNET TFLite model",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Herbereken embeddings ook als .npy al bestaat (nodig na model-update)",
+    )
     return parser.parse_args()
 
 
@@ -140,7 +145,7 @@ def main() -> None:
         path_hash = hashlib.md5(str(wav_path).encode()).hexdigest()[:16]  # noqa: S324
         embedding_file = embeddings_dir / f"{path_hash}.npy"
 
-        if embedding_file.exists():
+        if embedding_file.exists() and not args.force:
             skipped += 1
             index_rows.append(
                 {

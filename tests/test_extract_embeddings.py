@@ -20,7 +20,7 @@ def _load_module():
 class _FakeInterpreter:
     def __init__(self) -> None:
         self.invoke_count = 0
-        self.tensor = np.zeros((1, 6522), dtype=np.float32)
+        self.tensor = np.zeros((1, 1024), dtype=np.float32)
 
     def set_tensor(self, _index: int, _value: np.ndarray) -> None:
         pass
