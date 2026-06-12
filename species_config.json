@@ -164,6 +164,39 @@
       "priority": "very_high",
       "alert": true,
       "gbif_taxon_key": 2435098
+    },
+    {
+      "scientific": "Felis catus",
+      "nl": "huiskat",
+      "en": "domestic cat",
+      "emoji": "🐱",
+      "family": "Felidae",
+      "inaturalist_taxon_id": 118552,
+      "priority": "low",
+      "alert": false,
+      "gbif_taxon_key": 2435098
+    },
+    {
+      "scientific": "Homo sapiens",
+      "nl": "mens",
+      "en": "human",
+      "emoji": "🧍",
+      "family": "Hominidae",
+      "inaturalist_taxon_id": 43584,
+      "priority": "low",
+      "alert": false,
+      "gbif_taxon_key": 2436436
+    },
+    {
+      "scientific": "background",
+      "nl": "achtergrond",
+      "en": "background",
+      "emoji": "🌿",
+      "family": "background",
+      "inaturalist_taxon_id": null,
+      "priority": "none",
+      "alert": false,
+      "gbif_taxon_key": null
     }
   ]
 }

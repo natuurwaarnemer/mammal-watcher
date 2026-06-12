@@ -31,7 +31,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from tqdm import tqdm
 
-EMBEDDING_DIM = 6522
+EMBEDDING_DIM = 1024
 MODEL_FILENAME = "mammal_mlp.pt"
 TARGET_SPECIES = [
     "vulpes_vulpes",
@@ -50,6 +50,30 @@ TARGET_SPECIES = [
     "lynx_lynx",
     "felis_silvestris",
 ]
+
+# Soorten in prepared/ die als 'background' worden gelabeld bij het trainen.
+# Dit zijn geldige audio-opnames, maar geen NL-doelsoorten voor dit systeem.
+BACKGROUND_SPECIES: frozenset[str] = frozenset({
+    "gallus_gallus",            # kip — vogel, beste ruis-proxy
+    "alces_alces",              # eland — niet in NL
+    "bos_taurus",               # koe
+    "canis_lupus_familiaris",   # hond
+    "capra_hircus",             # geit
+    "dama_dama",                # damhert — niet in doellijst
+    "equus_caballus",           # paard
+    "erinaceus_europaeus",      # egel
+    "gulo_gulo",                # veelvraat — niet in NL
+    "marmota_marmota",          # marmot — niet in NL
+    "mustela_putorius",         # bunzing
+    "myocastor_coypus",         # nutria
+    "nyctereutes_procyonoides", # wasbeerhond
+    "ondatra_zibethicus",       # muskusrat
+    "oryctolagus_cuniculus",    # konijn
+    "ovis_aries",               # schaap
+    "procyon_lotor",            # wasbeer
+    "ursus_arctos",             # beer — niet in NL
+})
+
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +127,8 @@ class EmbeddingDataset(Dataset[tuple[torch.Tensor, int]]):
         with index_csv.open(newline="", encoding="utf-8") as fh:
             for row in csv.DictReader(fh):
                 species = _species_slug(row["species_scientific"])
+                if species in BACKGROUND_SPECIES:
+                    species = "background"
                 if species not in self.class_to_idx:
                     continue
                 emb_path = Path(row["embedding_file"])
