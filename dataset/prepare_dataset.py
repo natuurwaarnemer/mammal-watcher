@@ -39,6 +39,7 @@ except ImportError:
 
 TARGET_SR = 16000
 CHUNK_SECONDS = 10
+MIN_RMS = 0.01  # Stille chunks onder deze drempel worden overgeslagen
 INDEX_FILENAME = "index.csv"
 AUDIO_EXTENSIONS = {"mp3", "wav", "ogg", "flac", "m4a", "aac", "opus"}
 
@@ -169,8 +170,13 @@ def process_file(
     out_species_dir.mkdir(parents=True, exist_ok=True)
 
     rows: list[dict] = []
+    silent_skipped = 0
     stem = audio_path.stem
     for i, chunk in enumerate(chunks):
+        rms = float(np.sqrt(np.mean(chunk ** 2)))
+        if rms < MIN_RMS:
+            silent_skipped += 1
+            continue
         chunk_name = f"{stem}_chunk{i:04d}.wav"
         chunk_path = out_species_dir / chunk_name
         if not chunk_path.exists():
@@ -184,6 +190,8 @@ def process_file(
                 "source": source,
             }
         )
+    if silent_skipped:
+        print(f"  ⏭ {silent_skipped}/{len(chunks)} stille chunks overgeslagen ({audio_path.name})", file=sys.stderr)
     return rows
 
 
