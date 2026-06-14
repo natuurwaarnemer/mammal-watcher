@@ -104,9 +104,6 @@ class RTSPConsumer:
                     if samples.ndim > 1:
                         samples = samples.mean(axis=0)
                     samples = samples.astype(np.float32)
-                    peak = float(np.abs(samples).max())
-                    if peak > 0.0:
-                        samples = samples / peak
 
                     # Resample als samplerate afwijkt van doelrate
                     source_sr = frame.sample_rate
@@ -187,9 +184,6 @@ class RTSPConsumer:
                         np.frombuffer(raw, dtype=np.int16).astype(np.float32)
                         / 32768.0
                     )
-                    peak = float(np.abs(samples).max())
-                    if peak > 0.0:
-                        samples = samples / peak
                     buffer = np.concatenate([buffer, samples])
 
                     while len(buffer) >= self._window_size:
