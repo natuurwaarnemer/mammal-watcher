@@ -8,6 +8,7 @@ scipy>=1.10
 tqdm>=4.65
 birdnetlib>=0.9
 tensorflow-cpu==2.15.1
+tensorflow-hub>=0.14
 fastapi>=0.110
 uvicorn[standard]>=0.27
 httpx>=0.27
