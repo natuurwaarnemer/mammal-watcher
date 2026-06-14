@@ -29,7 +29,7 @@ import numpy as np
 import yaml
 import soundfile as sf
 
-from classifier import BaseClassifier, BirdNetMLPClassifier, MammalCNNClassifier
+from classifier import BaseClassifier, BirdNetMLPClassifier, MammalCNNClassifier, YAMNetMLPClassifier
 from feedback_collector import FeedbackCollector
 
 __version__ = "0.2.0"
@@ -271,51 +271,40 @@ def main() -> None:
 
     # Bouw classifier
     model_name = cfg.get("classifier", {}).get("model", "auto")
-    if model_name == "birdnet_mlp":
-        try:
-            classifier: BaseClassifier = BirdNetMLPClassifier(
-                model_path=cfg.get("classifier", {}).get("model_path", "models/mammal_mlp.pt"),
-                min_confidence=cfg.get("classifier", {}).get("min_confidence", 0.1),
-            )
-            logger.info("BirdNET-MLP model geladen (%s)", BirdNetMLPClassifier.MODEL_VERSION)
-        except Exception:  # noqa: BLE001
-            logger.exception("BirdNET-MLP laden mislukt, probeer MammalCNN fallback")
-            try:
-                classifier = MammalCNNClassifier(
-                    model_path=cfg.get("classifier", {}).get("cnn_model_path", "models/mammal_cnn.pt"),
-                    min_confidence=cfg.get("classifier", {}).get("min_confidence", 0.1),
-                )
-            except Exception:  # noqa: BLE001
-                if args.no_rtsp:
-                    logger.warning("Geen model beschikbaar in --no-rtsp; gebruik no-op fallback")
-                    classifier = _NoRtspFallbackClassifier()
-                else:
-                    raise
+    mlp_path = cfg.get("classifier", {}).get("mlp_model_path", cfg.get("classifier", {}).get("model_path", "models/mammal_mlp.pt"))
+    cnn_path = cfg.get("classifier", {}).get("cnn_model_path", "models/mammal_cnn.pt")
+    min_conf = cfg.get("classifier", {}).get("min_confidence", 0.1)
+
+    if model_name == "yamnet_mlp":
+        classifier: BaseClassifier = YAMNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
+        logger.info("YAMNet-MLP model geladen (%s)", YAMNetMLPClassifier.MODEL_VERSION)
+    elif model_name == "birdnet_mlp":
+        classifier = BirdNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
+        logger.info("BirdNET-MLP model geladen (%s)", BirdNetMLPClassifier.MODEL_VERSION)
     elif model_name == "mammal_cnn":
-        classifier = MammalCNNClassifier(
-            model_path=cfg.get("classifier", {}).get("model_path", "models/mammal_cnn.pt"),
-            min_confidence=cfg.get("classifier", {}).get("min_confidence", 0.1),
-        )
+        classifier = MammalCNNClassifier(model_path=cnn_path, min_confidence=min_conf)
         logger.info("MammalCNN model geladen")
     else:
-        # auto (standaard): eerst BirdNET-MLP, daarna MammalCNN fallback
-        mlp_path = cfg.get("classifier", {}).get("mlp_model_path", cfg.get("classifier", {}).get("model_path", "models/mammal_mlp.pt"))
-        cnn_path = cfg.get("classifier", {}).get("cnn_model_path", "models/mammal_cnn.pt")
-        min_conf = cfg.get("classifier", {}).get("min_confidence", 0.1)
+        # auto (standaard): YAMNet-MLP → BirdNET-MLP → MammalCNN
         try:
-            classifier = BirdNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
-            logger.info("Auto: BirdNET-MLP model geladen (%s)", BirdNetMLPClassifier.MODEL_VERSION)
+            classifier = YAMNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
+            logger.info("Auto: YAMNet-MLP model geladen (%s)", YAMNetMLPClassifier.MODEL_VERSION)
         except Exception:  # noqa: BLE001
-            logger.info("Auto: BirdNET-MLP niet beschikbaar, probeer MammalCNN")
+            logger.info("Auto: YAMNet-MLP niet beschikbaar, probeer BirdNET-MLP")
             try:
-                classifier = MammalCNNClassifier(model_path=cnn_path, min_confidence=min_conf)
-                logger.info("Auto: MammalCNN model geladen")
+                classifier = BirdNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
+                logger.info("Auto: BirdNET-MLP model geladen (%s)", BirdNetMLPClassifier.MODEL_VERSION)
             except Exception:  # noqa: BLE001
-                if args.no_rtsp:
-                    logger.warning("Auto: geen model beschikbaar in --no-rtsp; gebruik no-op fallback")
-                    classifier = _NoRtspFallbackClassifier()
-                else:
-                    raise
+                logger.info("Auto: BirdNET-MLP niet beschikbaar, probeer MammalCNN")
+                try:
+                    classifier = MammalCNNClassifier(model_path=cnn_path, min_confidence=min_conf)
+                    logger.info("Auto: MammalCNN model geladen")
+                except Exception:  # noqa: BLE001
+                    if args.no_rtsp:
+                        logger.warning("Auto: geen model beschikbaar in --no-rtsp; gebruik no-op fallback")
+                        classifier = _NoRtspFallbackClassifier()
+                    else:
+                        raise
 
     # Laad soorten-index
     species_csv = cfg.get("species_csv", "./species_mammals_nl.csv")

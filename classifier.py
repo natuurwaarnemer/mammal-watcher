@@ -350,3 +350,117 @@ class BirdNetMLPClassifier(BaseClassifier):
             "tier": int(tier),
             "model_version": self.MODEL_VERSION,
         }
+
+
+class YAMNetMLPClassifier(BaseClassifier):
+    """Classifier op basis van YAMNet embeddings + kleine PyTorch MLP (mammal_mlp.pt).
+
+    YAMNet (Google, AudioSet) is general audio — in tegenstelling tot BirdNET
+    onderscheidt het zoogdieren, vogels, mens en omgevingsgeluid, wat een
+    betrouwbare background-klasse mogelijk maakt.
+    """
+
+    MODEL_VERSION = "yamnet-mlp-1.0"
+    TARGET_SR = 16000
+    EMBEDDING_DIM = 1024
+    YAMNET_MODEL_URL = "https://tfhub.dev/google/yamnet/1"
+
+    def __init__(
+        self,
+        model_path: str = "models/mammal_mlp.pt",
+        min_confidence: float = 0.1,
+        species_csv_path: str = "species_mammals_nl.csv",
+    ) -> None:
+        import torch
+
+        self.min_confidence = float(min_confidence)
+        self._torch = torch
+        self._species_lookup = MammalCNNClassifier._load_species_lookup(species_csv_path)
+
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+        class_mapping = checkpoint["class_mapping"]
+        self._idx_to_class: dict[int, str] = {int(idx): str(slug) for idx, slug in class_mapping.items()}
+        self._input_dim: int = int(checkpoint.get("input_dim", self.EMBEDDING_DIM))
+
+        num_classes = len(self._idx_to_class)
+        self._model = BirdNetMLPClassifier._build_model(self._input_dim, num_classes)
+        self._model.load_state_dict(checkpoint["model_state_dict"])
+        self._model.eval()
+
+        self._yamnet = self._load_yamnet()
+
+    def _load_yamnet(self):
+        try:
+            import tensorflow_hub as hub
+        except ImportError as exc:
+            raise RuntimeError(
+                "YAMNetMLPClassifier vereist tensorflow-hub. "
+                "Installeer via: pip install tensorflow-hub"
+            ) from exc
+        return hub.load(self.YAMNET_MODEL_URL)
+
+    def _extract_embedding(self, audio: np.ndarray, sr: int) -> np.ndarray:
+        import tensorflow as tf
+
+        samples = audio.reshape(-1).astype(np.float32)
+        if sr != self.TARGET_SR:
+            try:
+                import librosa
+                samples = librosa.resample(samples, orig_sr=sr, target_sr=self.TARGET_SR)
+            except Exception:  # noqa: BLE001
+                return np.zeros(self.EMBEDDING_DIM, dtype=np.float32)
+
+        peak = float(np.max(np.abs(samples)))
+        if peak > 0.0:
+            samples = samples / peak
+
+        waveform = tf.constant(samples, dtype=tf.float32)
+        _, embeddings, _ = self._yamnet(waveform)
+        return np.asarray(embeddings).mean(axis=0).astype(np.float32)
+
+    def _resolve_species_meta(self, slug: str) -> tuple[str, str, str, int]:
+        scientific = MammalCNNClassifier._slug_to_scientific(slug)
+        row = self._species_lookup.get(scientific.lower(), {})
+        nl_name = str(row.get("nl_name", "")).strip() or slug.replace("_", " ")
+        en_name = str(row.get("en_name", "")).strip() or scientific
+        try:
+            tier = int(row.get("tier", 3))
+        except (TypeError, ValueError):
+            tier = 3
+        return scientific, nl_name, en_name, tier
+
+    def classify(self, audio: np.ndarray, sr: int) -> dict | None:
+        samples = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if samples.size == 0 or sr <= 0:
+            return None
+
+        try:
+            embedding = self._extract_embedding(samples, sr)
+        except Exception:  # noqa: BLE001
+            return None
+
+        tensor = self._torch.from_numpy(embedding).unsqueeze(0)
+
+        with self._torch.no_grad():
+            logits = self._model(tensor)
+            probabilities = self._torch.softmax(logits, dim=1).squeeze(0)
+
+        best_score, best_idx = self._torch.max(probabilities, dim=0)
+        confidence = float(best_score.item())
+        if confidence < self.min_confidence:
+            return None
+
+        class_idx = int(best_idx.item())
+        slug = self._idx_to_class.get(class_idx, "unknown_species")
+        if slug in ("background", "unknown_species"):
+            return None
+
+        scientific, nl_name, en_name, tier = self._resolve_species_meta(slug)
+        return {
+            "species_scientific": scientific,
+            "species_nl": nl_name,
+            "species_en": en_name,
+            "confidence": round(float(np.clip(confidence, 0.0, 1.0)), 4),
+            "tier": int(tier),
+            "model_version": self.MODEL_VERSION,
+        }
