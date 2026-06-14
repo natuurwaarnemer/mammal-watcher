@@ -495,8 +495,8 @@ class TestRTSPConsumer:
         )
         assert consumer._window_size == 240000  # 48000 * 5
 
-    def test_iter_windows_av_peak_normalizes_low_float_audio(self) -> None:
-        """PyAV-pad moet lage float-amplitude per frame piek-normaliseren."""
+    def test_iter_windows_av_passes_raw_float_audio(self) -> None:
+        """PyAV-pad levert samples ongenormaliseerd — classifiers normaliseren op window-niveau."""
         from rtsp_consumer import RTSPConsumer
 
         consumer = RTSPConsumer(
@@ -526,11 +526,11 @@ class TestRTSPConsumer:
             gen.close()
 
         assert sr == 4
-        assert np.isclose(np.abs(window).max(), 1.0)
+        assert np.isclose(np.abs(window).max(), 0.05)
         assert window.dtype == np.float32
 
-    def test_iter_windows_ffmpeg_peak_normalizes_chunks(self) -> None:
-        """ffmpeg-fallback moet chunks na s16 normalisatie ook piek-normaliseren."""
+    def test_iter_windows_ffmpeg_passes_scaled_int16_audio(self) -> None:
+        """ffmpeg-fallback levert int16-samples geschaald naar float32 via /32768 — geen piek-normalisatie."""
         from rtsp_consumer import RTSPConsumer
 
         consumer = RTSPConsumer(
@@ -571,5 +571,5 @@ class TestRTSPConsumer:
             gen.close()
 
         assert sr == 4
-        assert np.isclose(np.abs(window).max(), 1.0)
+        assert np.isclose(np.abs(window).max(), 2000 / 32768.0, rtol=1e-4)
         assert window.dtype == np.float32
