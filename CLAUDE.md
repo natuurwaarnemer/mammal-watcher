@@ -193,3 +193,100 @@ python dataset/download_birdnet_clips.py
 4. Valideren via mammalradar.net/review
 5. Nicla Voice edge model (16kHz WAV klaarstaat in /mnt/usb/prepared/)
 6. n8n Telegram alerts voor tier-1 soorten
+
+---
+
+## Veldkastje — BOM & Architectuur
+
+### Dataflow
+
+```
+[Omgeving / geluid]
+        ↓
+[Nicla Voice]
+  - NDP120 neural processor + ingebouwde PDM-mic
+  - Edge Impulse model (zie scope hieronder)
+  - Stuurt via UART: label + confidence + trigger
+        ↓
+[ESP32-C6]                          ← ESPHome (geen custom firmware nodig)
+  - Ontvangt UART van Nicla Voice
+  - Optioneel: SD-kaart voor audio-buffer
+  - Modem: WiFi (fase 1) of LilyGo T-SIM7600E 4G (fase 2)
+  - Stuurt detectie → MQTT / HA API / webhook
+        ↓
+[Netwerk — WiFi of GSM/4G]
+        ↓
+[T630 / Server]
+  - Ontvangst via MQTT of webhook
+  - Opslag audio-snippets
+  - Soortherkenning: mammal_mlp.pt (YAMNet embeddings)
+  - Gedragsanalyse: NatureLM (toekomst — cloud API, niet lokaal)
+        ↓
+[Home Assistant / n8n / Dashboard]
+  - Telegram alerts (tier-1 soorten)
+  - mammalradar.net (review + visualisatie)
+  - Logging in InfluxDB (toekomst)
+```
+
+### Hardware BOM
+
+#### Fase 1 — WiFi prototype (thuis/tuin)
+
+| Component | Details | Prijs |
+|---|---|---|
+| Arduino Nicla Voice | NDP120 + PDM-mic, Edge Impulse deploy | ~€86 |
+| ESP32-C6 devboard | WiFi 6, ESPHome, UART brug | ~€8 |
+| Micro SD module + 32GB | Lokale audio-buffer | ~€10 |
+| LiPo 3.7V 3000mAh | Stroom | ~€10 |
+| TP4056 charger module | Laden via USB | ~€2 |
+| Dupont/JST kabels | Verbindingen | ~€5 |
+| **Totaal fase 1** | | **~€121** |
+
+#### Fase 2 — Veld (GSM, waterproof, autonoom)
+
+| Component | Details | Prijs |
+|---|---|---|
+| LilyGo T-SIM7600E | ESP32 + 4G modem in één board (vervangt ESP32-C6) | ~€35 |
+| Simbase SIM | Pay-per-MB, NL/EU | ~€5 + gebruik |
+| Zonnepaneel 5W + laadregelaar | Autonoom | ~€15 |
+| IP67 behuizing 150×100×75mm | Weerbestendig | ~€12 |
+| Kabelwartels M12 | Waterdicht | ~€5 |
+| Windkap microfoon | Windruis | ~€4 |
+| **Extra fase 2** | | **~€76** |
+
+### Verbinding Nicla Voice ↔ ESP32-C6
+
+```
+Nicla Voice          ESP32-C6 (ESPHome)
+───────────          ──────────────────
+TX (UART)   ──────►  GPIO17 (RX)
+RX (UART)   ◄──────  GPIO18 (TX)
+GND         ──────►  GND
+VIN (3.3V)  ◄──────  3V3
+```
+
+ESPHome UART config:
+```yaml
+uart:
+  rx_pin: GPIO17
+  tx_pin: GPIO18
+  baud_rate: 9600
+```
+
+### Edge Impulse model scope (Nicla Voice NDP120)
+
+Het NDP120 heeft beperkt RAM (~50KB voor activaties) en modelgeheugen (~200KB).
+
+| Aanpak | Klassen | Haalbaarheid | Aanbevolen? |
+|---|---|---|---|
+| Binair: zoogdier / achtergrond | 2 | Zeker | Start hier |
+| Klein: wolf + vos + bever + overig + achtergrond | 5 | Goed | Fase 2 |
+| Alle soorten (12+) | 12+ | Risico | Niet voor NDP120 |
+
+Trainingsdata staat klaar: `/mnt/usb/prepared/` (16kHz WAV, direct bruikbaar voor Edge Impulse).
+
+### NatureLM — status
+
+- **Als download: definitief niet haalbaar** — 16 TiB, onmogelijk op thuisserver
+- **Als cloud API**: Earth Species Project biedt mogelijk inference-endpoint — nog te onderzoeken
+- **Alternatief**: lichtgewicht gedragsclassificator op T630 (alarm / roep / foerageren) — toekomst
