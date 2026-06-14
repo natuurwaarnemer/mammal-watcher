@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends     ffmpeg     
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu     && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu     && pip install --no-cache-dir -r requirements.txt
 
 RUN mkdir -p /app/clips/confirmed /app/clips/uncertain /app/models
 

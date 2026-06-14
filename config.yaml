@@ -12,8 +12,8 @@ classifier:
   model: yamnet_mlp
   model_path: /app/models/mammal_mlp.pt
   min_confidence: 0.70
-  tier1_threshold: 0.75
-  tier2_threshold: 0.5
+  tier1_threshold: 0.85
+  tier2_threshold: 0.65
 
 clips:
   enabled: true
