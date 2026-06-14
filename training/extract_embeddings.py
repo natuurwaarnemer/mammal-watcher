@@ -1,12 +1,23 @@
 """
-Bereken BirdNET embeddings voor alle WAV clips in prepared/index.csv.
+Bereken YAMNet embeddings voor alle WAV clips in de prepared directory.
 
-Gebruik:
+Gebruik (aanbevolen — verwerkt ALLE soorten inclusief background):
+    python training/extract_embeddings.py \
+        --prepared-dir /mnt/usb/prepared \
+        --embeddings-dir /mnt/usb/embeddings_yamnet
+
+Gebruik (alleen clips uit een bestaande index CSV):
     python training/extract_embeddings.py \
         --data /mnt/usb/prepared/index.csv \
-        --embeddings-dir /mnt/usb/embeddings
+        --embeddings-dir /mnt/usb/embeddings_yamnet
 
-Output: één .npy bestand per clip (6522-dim float32 vector) en embeddings_index.csv.
+Output: één .npy bestand per clip (1024-dim float32 YAMNet embedding) + embeddings_index.csv.
+
+Waarom YAMNet?
+  BirdNET embeddings zijn vogelspecifiek (getraind op AudioSet vogeldetectie).
+  YAMNet is general audio (521 AudioSet klassen) en maakt onderscheid tussen
+  zoogdiergeluiden, vogels, mens, en omgevingsgeluid — cruciaal voor een
+  betrouwbare background-klasse.
 """
 
 from __future__ import annotations
@@ -14,167 +25,189 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import re
 import sys
 from pathlib import Path
 
-import librosa
 import numpy as np
-import tensorflow as tf
+import soundfile as sf
 
-
-SAMPLE_RATE = 48000
-CHUNK_SAMPLES = 144000
+TARGET_SR = 16000
 EMBEDDING_DIM = 1024
-OUTPUT_TENSOR_INDEX = 545
-DEFAULT_MODEL_PATH = (
-    "/usr/local/lib/python3.11/site-packages/birdnetlib/models/analyzer/"
-    "BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite"
-)
+YAMNET_MODEL_URL = "https://tfhub.dev/google/yamnet/1"
 
 
-def _load_interpreter(model_path: str) -> tuple[tf.lite.Interpreter, int]:
-    """Laad één TFLite interpreter voor alle bestanden."""
-    interpreter = tf.lite.Interpreter(model_path=model_path)
-    interpreter.resize_tensor_input(0, [1, 144000])
-    interpreter.allocate_tensors()
-    input_index = int(interpreter.get_input_details()[0]["index"])
-    return interpreter, input_index
+def _load_yamnet():
+    try:
+        import tensorflow_hub as hub
+    except ImportError as exc:
+        raise RuntimeError(
+            "YAMNet vereist tensorflow-hub. "
+            "Installeer via: pip install tensorflow-hub"
+        ) from exc
+    print("YAMNet model laden (eerste keer ~30s download)...")
+    model = hub.load(YAMNET_MODEL_URL)
+    print("Model geladen ✓")
+    return model
 
 
-def _extract_embedding_from_audio(
-    audio: np.ndarray,
-    interpreter: tf.lite.Interpreter,
-    input_index: int,
-) -> np.ndarray:
-    """Bereken gemiddelde embedding over 3s chunks."""
-    if len(audio) == 0:
-        return np.zeros(EMBEDDING_DIM, dtype=np.float32)
-
-    embeddings: list[np.ndarray] = []
-    for start in range(0, len(audio), CHUNK_SAMPLES):
-        chunk = audio[start : start + CHUNK_SAMPLES]
-        if len(chunk) < CHUNK_SAMPLES:
-            chunk = np.pad(chunk, (0, CHUNK_SAMPLES - len(chunk)))
-        chunk = chunk.astype(np.float32, copy=False)
-
-        interpreter.set_tensor(input_index, np.array([chunk], dtype=np.float32))
-        interpreter.invoke()
-        tensor = interpreter.get_tensor(OUTPUT_TENSOR_INDEX).copy()
-        embeddings.append(tensor.reshape(EMBEDDING_DIM))
-
-    if not embeddings:
-        return np.zeros(EMBEDDING_DIM, dtype=np.float32)
-    return np.mean(np.vstack(embeddings), axis=0).astype(np.float32)
+def _extract_embedding(model, audio: np.ndarray) -> np.ndarray:
+    """Extraheer YAMNet 1024-dim embedding, gemiddeld over tijdframes."""
+    import tensorflow as tf
+    waveform = tf.constant(audio, dtype=tf.float32)
+    _, embeddings, _ = model(waveform)
+    # embeddings shape: (num_frames, 1024) — gemiddeld over frames
+    return np.asarray(embeddings).mean(axis=0).astype(np.float32)
 
 
-def _extract_embedding_for_file(
-    wav_path: Path,
-    interpreter: tf.lite.Interpreter,
-    input_index: int,
-) -> np.ndarray:
-    audio, _ = librosa.load(
-        str(wav_path),
-        sr=SAMPLE_RATE,
-        mono=True,
-        res_type="kaiser_fast",
-    )
-    return _extract_embedding_from_audio(audio, interpreter, input_index)
+def _load_wav_16k(wav_path: Path) -> np.ndarray | None:
+    """Laad WAV als mono float32 op 16kHz; resampelt indien nodig."""
+    try:
+        audio, sr = sf.read(str(wav_path), dtype="float32")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠ Leesfout ({wav_path.name}): {exc}", file=sys.stderr)
+        return None
+    if audio.ndim > 1:
+        audio = audio.mean(axis=-1)
+    if sr != TARGET_SR:
+        try:
+            import librosa
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=TARGET_SR)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ⚠ Resample fout ({wav_path.name}, {sr}Hz): {exc}", file=sys.stderr)
+            return None
+    return audio
 
 
-# ---------------------------------------------------------------------------
-# Hoofdfunctie
-# ---------------------------------------------------------------------------
+def _slug(name: str) -> str:
+    return re.sub(r"_+", "_", name.strip().lower().replace(" ", "_"))
+
+
+def _collect_from_prepared_dir(prepared_dir: Path) -> list[tuple[Path, str]]:
+    """Scan alle soort-submappen; directory naam = species slug."""
+    entries: list[tuple[Path, str]] = []
+    for species_dir in sorted(prepared_dir.iterdir()):
+        if not species_dir.is_dir():
+            continue
+        slug = species_dir.name
+        wav_files = sorted(species_dir.glob("*.wav"))
+        if not wav_files:
+            print(f"  ⚠ Geen WAV-bestanden in {slug}, overgeslagen.")
+            continue
+        print(f"  {slug}: {len(wav_files)} clips")
+        for wav_file in wav_files:
+            entries.append((wav_file, slug))
+    return entries
+
+
+def _collect_from_csv(csv_path: Path) -> list[tuple[Path, str]]:
+    """Lees index.csv; geef (wav_path, species_slug) tuples."""
+    entries: list[tuple[Path, str]] = []
+    with csv_path.open(newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            wav_path = Path(row["file"])
+            species_slug = _slug(row.get("species_scientific", "unknown"))
+            entries.append((wav_path, species_slug))
+    return entries
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", required=True, help="Pad naar prepared/index.csv")
+    src = parser.add_mutually_exclusive_group(required=True)
+    src.add_argument(
+        "--prepared-dir",
+        help="Map met soort-submappen (bijv. /mnt/usb/prepared). "
+             "Verwerkt ALLE submappen inclusief background.",
+    )
+    src.add_argument(
+        "--data",
+        help="Pad naar index.csv (verwerkt alleen vermelde clips).",
+    )
     parser.add_argument(
         "--embeddings-dir",
         required=True,
-        help="Uitvoermap voor .npy embedding bestanden",
-    )
-    parser.add_argument(
-        "--model",
-        default=DEFAULT_MODEL_PATH,
-        help="Pad naar BirdNET TFLite model",
+        help="Uitvoermap voor .npy bestanden en embeddings_index.csv",
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Herbereken embeddings ook als .npy al bestaat (nodig na model-update)",
+        help="Herbereken embeddings ook als .npy al bestaat",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    data_path = Path(args.data)
     embeddings_dir = Path(args.embeddings_dir)
+    embeddings_dir.mkdir(parents=True, exist_ok=True)
 
-    if not data_path.exists():
-        print(f"Indexbestand niet gevonden: {data_path}", file=sys.stderr)
+    if args.prepared_dir:
+        prepared_dir = Path(args.prepared_dir)
+        if not prepared_dir.exists():
+            print(f"Map niet gevonden: {prepared_dir}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Soorten in {prepared_dir}:")
+        entries = _collect_from_prepared_dir(prepared_dir)
+    else:
+        data_path = Path(args.data)
+        if not data_path.exists():
+            print(f"Indexbestand niet gevonden: {data_path}", file=sys.stderr)
+            sys.exit(1)
+        entries = _collect_from_csv(data_path)
+
+    if not entries:
+        print("Geen WAV-bestanden gevonden.", file=sys.stderr)
         sys.exit(1)
 
-    embeddings_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\n{len(entries)} clips gevonden. YAMNet laden...")
+    model = _load_yamnet()
 
     try:
         from tqdm import tqdm
+        iter_entries = tqdm(entries, desc="Embeddings")
     except ImportError:
-        def tqdm(it, **kwargs):  # type: ignore[misc]
-            return it
-
-    try:
-        interpreter, input_index = _load_interpreter(args.model)
-    except Exception as exc:  # noqa: BLE001
-        print(f"Kon TFLite model niet laden ({args.model}): {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Feature extractor: tflite ({args.model})")
-
-    rows: list[dict[str, str]] = []
-    with data_path.open(newline="", encoding="utf-8") as fh:
-        rows = list(csv.DictReader(fh))
+        iter_entries = entries  # type: ignore[assignment]
 
     index_rows: list[dict[str, str]] = []
     skipped = 0
+    errors = 0
 
-    for row in tqdm(rows, desc="Embeddings"):
-        wav_path = Path(row["file"])
-        species = row.get("species_scientific", "unknown")
-
-        # Sla bestandsnaam op als hash van het pad
+    for wav_path, species_slug in iter_entries:
         path_hash = hashlib.md5(str(wav_path).encode()).hexdigest()[:16]  # noqa: S324
         embedding_file = embeddings_dir / f"{path_hash}.npy"
 
         if embedding_file.exists() and not args.force:
             skipped += 1
-            index_rows.append(
-                {
-                    "file": str(wav_path),
-                    "species_scientific": species,
-                    "embedding_file": str(embedding_file),
-                }
-            )
+            index_rows.append({
+                "file": str(wav_path),
+                "species_scientific": species_slug,
+                "embedding_file": str(embedding_file),
+            })
             continue
 
         if not wav_path.exists():
-            print(f"Bestand niet gevonden, overgeslagen: {wav_path}", file=sys.stderr)
+            print(f"Niet gevonden, overgeslagen: {wav_path}", file=sys.stderr)
+            errors += 1
+            continue
+
+        audio = _load_wav_16k(wav_path)
+        if audio is None:
+            errors += 1
             continue
 
         try:
-            embedding = _extract_embedding_for_file(wav_path, interpreter, input_index)
+            embedding = _extract_embedding(model, audio)
         except Exception as exc:  # noqa: BLE001
-            print(f"Fout bij {wav_path}: {exc}", file=sys.stderr)
+            print(f"Extractiefout ({wav_path.name}): {exc}", file=sys.stderr)
+            errors += 1
             continue
 
-        np.save(str(embedding_file), embedding.astype(np.float32))
-        index_rows.append(
-            {
-                "file": str(wav_path),
-                "species_scientific": species,
-                "embedding_file": str(embedding_file),
-            }
-        )
+        np.save(str(embedding_file), embedding)
+        index_rows.append({
+            "file": str(wav_path),
+            "species_scientific": species_slug,
+            "embedding_file": str(embedding_file),
+        })
 
     index_path = embeddings_dir / "embeddings_index.csv"
     with index_path.open("w", newline="", encoding="utf-8") as fh:
@@ -182,8 +215,9 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(index_rows)
 
-    print(f"\nKlaar! {len(index_rows)} embeddings opgeslagen ({skipped} overgeslagen).")
-    print(f"Index: {index_path}")
+    processed = len(index_rows) - skipped
+    print(f"\n✅ Klaar: {len(index_rows)} entries → {index_path}")
+    print(f"   Nieuw: {processed} | Overgeslagen: {skipped} | Fouten: {errors}")
 
 
 if __name__ == "__main__":
