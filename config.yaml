@@ -9,7 +9,7 @@ audio:
   hop_seconds: 10.0
 
 classifier:
-  model: birdnet_mlp
+  model: yamnet_mlp
   model_path: /app/models/mammal_mlp.pt
   min_confidence: 0.70
   tier1_threshold: 0.75

@@ -276,11 +276,25 @@ def main() -> None:
     min_conf = cfg.get("classifier", {}).get("min_confidence", 0.1)
 
     if model_name == "yamnet_mlp":
-        classifier: BaseClassifier = YAMNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
-        logger.info("YAMNet-MLP model geladen (%s)", YAMNetMLPClassifier.MODEL_VERSION)
+        try:
+            classifier: BaseClassifier = YAMNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
+            logger.info("YAMNet-MLP model geladen (%s)", YAMNetMLPClassifier.MODEL_VERSION)
+        except Exception:  # noqa: BLE001
+            if args.no_rtsp:
+                logger.warning("YAMNet-MLP niet beschikbaar in --no-rtsp; gebruik no-op fallback")
+                classifier = _NoRtspFallbackClassifier()
+            else:
+                raise
     elif model_name == "birdnet_mlp":
-        classifier = BirdNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
-        logger.info("BirdNET-MLP model geladen (%s)", BirdNetMLPClassifier.MODEL_VERSION)
+        try:
+            classifier = BirdNetMLPClassifier(model_path=mlp_path, min_confidence=min_conf)
+            logger.info("BirdNET-MLP model geladen (%s)", BirdNetMLPClassifier.MODEL_VERSION)
+        except Exception:  # noqa: BLE001
+            if args.no_rtsp:
+                logger.warning("BirdNET-MLP niet beschikbaar in --no-rtsp; gebruik no-op fallback")
+                classifier = _NoRtspFallbackClassifier()
+            else:
+                raise
     elif model_name == "mammal_cnn":
         classifier = MammalCNNClassifier(model_path=cnn_path, min_confidence=min_conf)
         logger.info("MammalCNN model geladen")
