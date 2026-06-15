@@ -7,7 +7,23 @@ Strategie:
   3. Download alleen audio voor matching IDs via streaming pass
   4. Sla op als WAV via soundfile
 
-Gebruik: python dataset/download_naturelm.py --output dataset/raw --species-file dataset/species_targets.yaml
+Gebruik (soorten downloaden naar prepared dir):
+    python dataset/download_naturelm.py \
+        --output /mnt/usb/prepared \
+        --species-file dataset/species_targets.yaml \
+        --max-per-species 500
+
+Gebruik (background downloaden via NatureLM WavCaps/UrbanSound):
+    python dataset/download_naturelm.py \
+        --output /mnt/usb/prepared \
+        --skip-species \
+        --background-clips 2000
+
+Gebruik (alles tegelijk — soorten + background):
+    python dataset/download_naturelm.py \
+        --output /mnt/usb/prepared \
+        --max-per-species 500 \
+        --background-clips 2000
 """
 
 from __future__ import annotations
@@ -48,6 +64,7 @@ except ImportError:
 
 NATURELM_DATASET = "EarthSpeciesProject/NatureLM-audio-training"
 SAMPLE_RATE = 16000
+BACKGROUND_SOURCES = {"WavCaps", "UrbanSound", "UrbanSound8K", "AudioCaps"}
 
 
 def _slug(scientific: str) -> str:
@@ -297,12 +314,79 @@ def download_from_naturelm(
     return counters
 
 
+
+def _download_background(
+    output_dir: Path,
+    sources: set[str],
+    max_clips: int,
+    debug: bool = False,
+) -> int:
+    """Stream WavCaps/UrbanSound/AudioCaps samples als background-klasse."""
+    bg_dir = output_dir / "background"
+    bg_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = {f.stem for f in bg_dir.glob("*.wav")}
+    remaining = max_clips - len(existing)
+    if remaining <= 0:
+        print(f"  Background al volledig ({len(existing)} clips aanwezig)")
+        return len(existing)
+
+    print(f"\n Achtergrond downloaden ({', '.join(sorted(sources))})...")
+    print(f"  Doel: {max_clips} clips, al aanwezig: {len(existing)}")
+
+    try:
+        ds = load_dataset(NATURELM_DATASET, split="train", streaming=True)
+    except Exception as exc:
+        print(f"Dataset laden mislukt: {exc}", file=sys.stderr)
+        return len(existing)
+
+    ok = 0
+    iterator = tqdm(ds, desc="Background", unit=" samples") if HAS_TQDM else ds
+
+    for sample in iterator:
+        if ok >= remaining:
+            break
+
+        source = sample.get("source_dataset", "")
+        if not any(s.lower() in source.lower() for s in sources):
+            continue
+
+        sample_id = (sample.get("id") or "").replace("/", "_")
+        if sample_id in existing:
+            continue
+
+        dest = bg_dir / f"bg_{sample_id}.wav"
+        if dest.exists():
+            existing.add(sample_id)
+            continue
+
+        audio = sample.get("audio")
+        if not audio:
+            continue
+
+        if _save_audio_as_wav(audio, dest):
+            existing.add(sample_id)
+            ok += 1
+            if debug:
+                print(f"  [background/{source}] {dest.name}")
+
+    total = len(existing)
+    print(f"  Klaar: {ok} nieuw, {total} totaal background clips")
+    return total
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", default="dataset/raw")
+    parser.add_argument("--output", default="/mnt/usb/prepared")
     parser.add_argument("--max-per-species", type=int, default=50)
     parser.add_argument("--species-file", default="dataset/species_targets.yaml")
     parser.add_argument("--dataset", default=NATURELM_DATASET)
+    parser.add_argument("--background-clips", type=int, default=0,
+                        help="Aantal background clips via WavCaps/UrbanSound/AudioCaps (0 = uit)")
+    parser.add_argument("--background-sources", default="WavCaps,UrbanSound,AudioCaps",
+                        help="Kommagescheiden bronnen voor background (standaard: WavCaps,UrbanSound,AudioCaps)")
+    parser.add_argument("--skip-species", action="store_true",
+                        help="Sla soort-download over, doe alleen background")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument(
         "--force-reindex",
