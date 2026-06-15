@@ -34,7 +34,7 @@ mqtt:
   ha_discovery: true
 
 feedback:
-  enabled: true
+  enabled: false
   feedback_dir: ./feedback
   pending_species:
     - meles_meles      # das — 20 samples
