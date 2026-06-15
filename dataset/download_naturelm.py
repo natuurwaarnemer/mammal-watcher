@@ -115,28 +115,31 @@ def _build_index(
         except Exception as exc:
             print(f"  ⚠ Checkpoint laden mislukt ({exc}), herbouw index...", file=sys.stderr)
 
-    print("📋 Stap 1: Parquet metadata laden (geen audio)...")
+    print("📋 Stap 1: Metadata streamen (vroege exit zodra alle soorten vol zijn)...")
     target_names = _scientific_names(species_list)
 
     try:
         ds_meta = load_dataset(
             NATURELM_DATASET,
             split="train",
-            columns=["id", "task", "output"],
+            streaming=True,
         )
     except Exception as exc:
         print(f"⚠ Dataset laden mislukt: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"  Filter op {len(species_list)} soorten...")
+    print(f"  Filter op {len(species_list)} soorten (max {max_per_species} per soort)...")
     index: dict[str, list[str]] = {_slug(s["scientific"]): [] for s in species_list}
+    found_total = 0
+    scanned = 0
 
     def _all_done() -> bool:
         return all(len(index[_slug(s["scientific"])]) >= max_per_species for s in species_list)
 
-    iterator = tqdm(ds_meta, desc="Parquet filteren", unit=" samples") if HAS_TQDM else ds_meta
+    iterator = tqdm(ds_meta, desc="Streaming", unit=" samples") if HAS_TQDM else ds_meta
 
     for sample in iterator:
+        scanned += 1
         if _all_done():
             break
 
@@ -154,8 +157,20 @@ def _build_index(
         sample_id = sample.get("id") or ""
         if sample_id and len(index[slug]) < max_per_species:
             index[slug].append(sample_id)
+            found_total += 1
             if debug:
                 print(f"  ✓ {species_name} → {sample_id}")
+
+            # Tussentijds checkpoint elke 50 matches
+            if found_total % 50 == 0:
+                try:
+                    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+                    with checkpoint_path.open("w", encoding="utf-8") as fh:
+                        json.dump(index, fh, ensure_ascii=False)
+                except Exception:
+                    pass
+
+    print(f"  Gescand: {scanned:,} samples, gevonden: {found_total} matches")
 
     for species_info in species_list:
         slug = _slug(species_info["scientific"])
