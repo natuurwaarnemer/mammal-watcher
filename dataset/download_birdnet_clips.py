@@ -4,13 +4,22 @@ Download achtergrond-clips van een lokale BirdNET-Go instantie voor de backgroun
 Het script haalt vogel-detecties op via de BirdNET-Go API, downloadt de AAC-clips
 en converteert ze naar WAV (16 kHz mono) — hetzelfde formaat als de rest van prepared/.
 
-Gebruik:
+Gebruik (alle soorten, max 50 per soort):
     python dataset/download_birdnet_clips.py \
         --api http://192.168.2.23:8080 \
         --output /mnt/usb/prepared/background \
         --index /mnt/usb/prepared/index.csv \
         --clips 500 \
         --min-confidence 0.85
+
+Gebruik (gericht op corviden — kraai/roek/kauw als background):
+    python dataset/download_birdnet_clips.py \
+        --api http://192.168.2.23:8080 \
+        --output /mnt/usb/prepared/background \
+        --index /mnt/usb/prepared/index.csv \
+        --clips 900 \
+        --min-confidence 0.80 \
+        --species "Corvus frugilegus,Corvus corone,Corvus monedula"
 
 Na afloop staan de WAV-bestanden in --output en zijn de paden toegevoegd aan index.csv.
 Daarna: extract_embeddings.py opnieuw draaien met --force.
@@ -27,6 +36,7 @@ from collections import defaultdict
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import URLError
+from urllib.parse import urlencode
 import json
 
 
@@ -38,13 +48,34 @@ SPECIES_LABEL = "background"
 def _fetch_detections(
     api_base: str,
     min_confidence: float,
+    species_filter: list[str] | None = None,
     max_pages: int = 30,
 ) -> list[dict]:
-    """Haal detecties op van BirdNET-Go API, meerdere pagina's."""
+    """Haal detecties op van BirdNET-Go API, optioneel gefilterd per soort."""
+    if species_filter:
+        detections: list[dict] = []
+        for species in species_filter:
+            detections.extend(
+                _fetch_detections_for_species(api_base, min_confidence, species, max_pages)
+            )
+        return detections
+
+    return _fetch_detections_for_species(api_base, min_confidence, None, max_pages)
+
+
+def _fetch_detections_for_species(
+    api_base: str,
+    min_confidence: float,
+    species: str | None,
+    max_pages: int,
+) -> list[dict]:
     detections: list[dict] = []
     offset = 0
     for _ in range(max_pages):
-        url = f"{api_base}/api/v2/detections?limit={API_MAX_LIMIT}&offset={offset}"
+        params: dict = {"limit": API_MAX_LIMIT, "offset": offset}
+        if species:
+            params["species"] = species
+        url = f"{api_base}/api/v2/detections?{urlencode(params)}"
         try:
             with urlopen(Request(url), timeout=10) as resp:
                 data = json.loads(resp.read())
@@ -67,13 +98,12 @@ def _select_ids(
     detections: list[dict],
     target_total: int,
 ) -> list[tuple[int, str]]:
-    """Kies clips zo dat meerdere soorten vertegenwoordigd zijn (max 50 per soort)."""
+    """Kies clips zo dat soorten evenredig vertegenwoordigd zijn."""
     by_species: dict[str, list[int]] = defaultdict(list)
     for det in detections:
         by_species[det["scientificName"]].append(det["id"])
 
     max_per_species = max(1, target_total // max(len(by_species), 1))
-    max_per_species = min(max_per_species, 50)
 
     selected: list[tuple[int, str]] = []
     for species, ids in sorted(by_species.items(), key=lambda x: -len(x[1])):
@@ -146,6 +176,10 @@ def parse_args() -> argparse.Namespace:
                         help="Aantal te downloaden clips")
     parser.add_argument("--min-confidence", type=float, default=0.85,
                         help="Minimale BirdNET-Go confidence")
+    parser.add_argument("--species", default=None,
+                        help="Kommagescheiden lijst van wetenschappelijke namen om te filteren "
+                             "(bijv. 'Corvus frugilegus,Corvus corone'). "
+                             "Standaard: alle soorten, max 50 per soort.")
     return parser.parse_args()
 
 
@@ -155,19 +189,23 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     index_path = Path(args.index)
 
+    species_filter = [s.strip() for s in args.species.split(",")] if args.species else None
+
     print(f"BirdNET-Go API: {args.api}")
     print(f"Uitvoer: {out_dir}")
     print(f"Doel: {args.clips} clips, min confidence {args.min_confidence}")
+    if species_filter:
+        print(f"Soortfilter: {', '.join(species_filter)}")
 
     existing = _load_existing_index(index_path)
     print(f"Al in index: {len(existing)} bestanden")
 
     print("Detecties ophalen...")
-    detections = _fetch_detections(args.api, args.min_confidence)
+    detections = _fetch_detections(args.api, args.min_confidence, species_filter)
     print(f"  {len(detections)} detecties met confidence >= {args.min_confidence}")
 
     if not detections:
-        print("Geen detecties gevonden. Controleer de API-URL.", file=sys.stderr)
+        print("Geen detecties gevonden. Controleer de API-URL of soortnaam.", file=sys.stderr)
         sys.exit(1)
 
     selected = _select_ids(detections, args.clips)
@@ -190,7 +228,6 @@ def main() -> None:
         else:
             fail += 1
 
-        # Schrijf elke 50 clips naar index om voortgang te bewaren
         if new_rows and len(new_rows) % 50 == 0:
             _append_to_index(index_path, new_rows)
             existing.update(r["file"] for r in new_rows)
