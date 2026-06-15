@@ -40,23 +40,26 @@ CONTEXT.md bevat de projectvisie en roadmap; dit bestand bevat de technische wer
 ├── classifier.py                        ← YAMNetMLPClassifier, BirdNetMLPClassifier, MammalCNNClassifier
 ├── mammal_watcher.py                    ← hoofdproces, RTSP → embed → classify → MQTT
 ├── training/
-│   ├── extract_embeddings.py            ← YAMNet embedding extractie (PR #38)
+│   ├── extract_embeddings.py            ← YAMNet embedding extractie
 │   └── train_mlp.py                     ← MLP trainer, leest embeddings_index.csv
 ├── dataset/
-│   └── extract_features.py              ← VEROUDERD, niet gebruiken (verkeerd formaat)
+│   ├── download_birdnet_clips.py        ← NUC2 clips downloaden (--species filter beschikbaar)
+│   ├── download_naturelm.py             ← NatureLM soorten + background via streaming
+│   ├── species_targets.yaml             ← 13 doelsoorten voor NatureLM download
+│   └── extract_features.py             ← VEROUDERD, niet gebruiken
 ├── models/
-│   └── mammal_mlp.pt                    ← huidig model (hertrainen na extractie)
-├── config.yaml                          ← model: yamnet_mlp (gewijzigd PR #39)
+│   └── mammal_mlp.pt                    ← huidig actief model
+├── config.yaml                          ← model: yamnet_mlp, feedback: disabled
 └── venv/                                ← Python venv met tensorflow-hub, torch, etc.
 
 /mnt/usb/                                ← USB schijf, altijd gemount, geen sudo nodig
-├── prepared/                            ← 35+ soort-submappen, 16kHz WAV clips
+├── prepared/                            ← soort-submappen, 16kHz WAV clips
 │   ├── vulpes_vulpes/ … sus_scrofa/     ← doelsoorten
-│   ├── background/                      ← 248 NUC2 vogelclips (= background klasse)
-│   ├── homo_sapiens/ felis_catus/       ← aparte klassen in species_config.json
+│   ├── background/                      ← NUC2 vogelclips + corviden (groeit)
+│   ├── homo_sapiens/ felis_catus/       ← aparte klassen
 │   └── canis_lupus_familiaris/ …        ← BACKGROUND_SPECIES (→ background bij training)
 ├── embeddings/                          ← BirdNET embeddings (VEROUDERD na PR #38)
-└── embeddings_yamnet/                   ← YAMNet embeddings (extractie loopt / klaar)
+└── embeddings_yamnet/                   ← YAMNet embeddings (huidige trainingsbasis)
 ```
 
 ---
@@ -120,7 +123,54 @@ docker compose build mammal-watcher && docker compose up -d mammal-watcher
 
 # Stap 4: valideren
 docker logs mammal-watcher --tail 50
-# En via browser: mammalradar.net/review
+```
+
+---
+
+## Data downloaden
+
+### Corviden van NUC2 (background-klasse)
+
+Kraai/roek/kauw zijn de grootste bron van false positives — hun roepen triggeren
+martes/otter/bever. NUC2 heeft 78k+ roek, 13k kraai, 9k kauw clips van dezelfde microfoon.
+
+```bash
+source ~/mammal-watcher/venv/bin/activate
+python dataset/download_birdnet_clips.py \
+    --output /mnt/usb/prepared/background \
+    --index /mnt/usb/prepared/index.csv \
+    --clips 900 --min-confidence 0.80 \
+    --species "Corvus frugilegus,Corvus corone,Corvus monedula"
+```
+
+### NatureLM — soorten + background (lang, checkpoint herstartbaar)
+
+NatureLM-audio-training (EarthSpeciesProject, 26.4M samples) bevat:
+- iNaturalist (320k) + Animal Sound Archive/Tierstimmen (16k) → soortspecifieke audio
+- WavCaps (402k, 7568 uur) + UrbanSound + AudioCaps → omgevingsgeluiden voor background
+
+Script downloadt EERST alleen metadata (snel), DAARNA alleen audio voor matches.
+Draait in tmux sessie 'naturelm': `tmux attach -t naturelm`
+Log: `tail -f /tmp/naturelm_download.log`
+
+```bash
+source ~/mammal-watcher/venv/bin/activate
+# Alles tegelijk (soorten + background):
+python dataset/download_naturelm.py \
+    --max-per-species 500 --background-clips 2000
+
+# Alleen background:
+python dataset/download_naturelm.py --skip-species --background-clips 2000
+
+# Checkpoint: herstart gewoon opnieuw, slaat bestaande bestanden over
+```
+
+### BirdNET-Go NUC2 API
+
+```bash
+# Clips downloaden (max 1000 per request, geen auth)
+http://192.168.2.23:8080/api/v2/audio/{id}   # → audio/mp4
+http://192.168.2.23:8080/api/v2/detections   # 276k+ detecties
 ```
 
 ---
@@ -138,16 +188,24 @@ Containers: `mammal-watcher`, `mammalradar-web` (nginx), `mammal-review-api`, `m
 
 ---
 
-## BirdNET-Go NUC2 API (voor background-data)
+## config.yaml — huidige instellingen (2026-06-15)
 
-```bash
-# Clips downloaden (max 1000 per request, geen auth)
-http://192.168.2.23:8080/api/v2/audio/{id}   # → audio/mp4
-http://192.168.2.23:8080/api/v2/detections   # 267k+ detecties
+```yaml
+classifier:
+  model: yamnet_mlp
+  min_confidence: 0.70
+  tier1_threshold: 0.85
+  tier2_threshold: 0.65
 
-# Script staat al klaar:
-python dataset/download_birdnet_clips.py
+clips:
+  save_uncertain: false      # uitgeschakeld — ruis
+
+feedback:
+  enabled: false             # uitgeschakeld tijdens databouw
+  min_pending_confidence: 0.70  # was 0.40 — te veel false positives
 ```
+
+**Feedback/pending weer aanzetten na hertraining:** zet `enabled: true` in config.yaml en herstart container.
 
 ---
 
@@ -170,6 +228,8 @@ python dataset/download_birdnet_clips.py
 | TF >= 2.16 | Maakt BirdNET tensor 545 ontoegankelijk via XNNPACK — gepind op 2.15.1 (YAMNet heeft dit niet) |
 | `prepared/index.csv` | Bevat alleen 15 doelsoorten — NIET background/homo_sapiens/etc. Gebruik `--prepared-dir` |
 | Copilot branches | 30+ open Copilot branches op GitHub — niet mergen zonder review |
+| Corviden (kraai/roek/kauw) | Grootste bron van false positives — triggeren martes/otter klassen. Worden als background toegevoegd via PR #41 + NUC2 download |
+| feedback/needs_review overloop | Bij min_pending_confidence 0.40 en 6 detecties/minuut: 8000+ bestanden/dag. Drempel nu 0.70, feedback disabled tijdens databouw |
 
 ---
 
@@ -181,18 +241,36 @@ python dataset/download_birdnet_clips.py
 | #36 | feat: download NUC2 background-clips | ✅ main |
 | #37 | fix: RMS stiltefilter in prepare_dataset.py | ✅ main |
 | #38 | fix: YAMNet extractiepipeline (vervangt BirdNET) + `--prepared-dir` | ✅ main |
-| #39 | feat: YAMNetMLPClassifier + config naar yamnet_mlp | ⏳ in review |
+| #39 | feat: YAMNetMLPClassifier + config naar yamnet_mlp | ✅ main |
+| #40 | fix: verwijder per-frame normalisatie RTSPConsumer | ✅ main |
+| #41 | feat: `--species` filter in download_birdnet_clips.py (corviden) | ✅ main |
+| #42 | feat: NatureLM output → /mnt/usb/prepared + background modus | ✅ main |
 
 ---
 
-## Volgende stappen (na PR #39 merge)
+## Volgende stappen (stand 2026-06-15)
 
-1. Wacht tot YAMNet extractie klaar is: `tail -f /tmp/yamnet_extract.log`
-2. Hertrainen (zie Training pipeline hierboven)
-3. Container rebuilden
-4. Valideren via mammalradar.net/review
-5. Nicla Voice edge model (16kHz WAV klaarstaat in /mnt/usb/prepared/)
-6. n8n Telegram alerts voor tier-1 soorten
+**Nu bezig (automatisch):**
+- Corvid download NUC2 → `/mnt/usb/prepared/background/` (log: `/tmp/corvid_download.log`)
+- NatureLM download → `/mnt/usb/prepared/` (tmux: `naturelm`, log: `/tmp/naturelm_download.log`)
+
+**Na beide downloads klaar:**
+1. Embeddings herextracten (alleen nieuwe bestanden, bestaande worden overgeslagen):
+   ```bash
+   source ~/mammal-watcher/venv/bin/activate
+   python training/extract_embeddings.py \
+       --prepared-dir /mnt/usb/prepared \
+       --embeddings-dir /mnt/usb/embeddings_yamnet
+   ```
+2. MLP hertrainen (zie Training pipeline)
+3. Container rebuilden (gebruiker)
+4. Feedback/pending weer aanzetten in config.yaml
+5. Valideren via mammalradar.net/review
+
+**Daarna gepland:**
+- n8n Telegram alerts tier-1 soorten (wolf, otter, bever) aanzetten
+- Nicla Voice edge model — Edge Impulse data uploaden + binair model trainen
+- Plausibiliteitslaag NDFF/GBIF (issue #33)
 
 ---
 
@@ -220,12 +298,10 @@ python dataset/download_birdnet_clips.py
   - Ontvangst via MQTT of webhook
   - Opslag audio-snippets
   - Soortherkenning: mammal_mlp.pt (YAMNet embeddings)
-  - Gedragsanalyse: NatureLM (toekomst — cloud API, niet lokaal)
         ↓
 [Home Assistant / n8n / Dashboard]
   - Telegram alerts (tier-1 soorten)
   - mammalradar.net (review + visualisatie)
-  - Logging in InfluxDB (toekomst)
 ```
 
 ### Hardware BOM
@@ -284,9 +360,3 @@ Het NDP120 heeft beperkt RAM (~50KB voor activaties) en modelgeheugen (~200KB).
 | Alle soorten (12+) | 12+ | Risico | Niet voor NDP120 |
 
 Trainingsdata staat klaar: `/mnt/usb/prepared/` (16kHz WAV, direct bruikbaar voor Edge Impulse).
-
-### NatureLM — status
-
-- **Als download: definitief niet haalbaar** — 16 TiB, onmogelijk op thuisserver
-- **Als cloud API**: Earth Species Project biedt mogelijk inference-endpoint — nog te onderzoeken
-- **Alternatief**: lichtgewicht gedragsclassificator op T630 (alarm / roep / foerageren) — toekomst
