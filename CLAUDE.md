@@ -245,12 +245,13 @@ feedback:
 | #40 | fix: verwijder per-frame normalisatie RTSPConsumer | ✅ main |
 | #41 | feat: `--species` filter in download_birdnet_clips.py (corviden) | ✅ main |
 | #42 | feat: NatureLM output → /mnt/usb/prepared + background modus | ✅ main |
+| #43 | fix: NatureLM metadata scan via streaming met vroege exit | ✅ main |
 
 ---
 
 ## Volgende stappen (stand 2026-06-15)
 
-**Nu bezig (automatisch):**
+**Nu bezig (nacht 2026-06-15/16):**
 - Corvid download NUC2 → `/mnt/usb/prepared/background/` (log: `/tmp/corvid_download.log`)
 - NatureLM download → `/mnt/usb/prepared/` (tmux: `naturelm`, log: `/tmp/naturelm_download.log`)
 
