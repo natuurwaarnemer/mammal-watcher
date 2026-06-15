@@ -18,7 +18,7 @@ classifier:
 clips:
   enabled: true
   clips_dir: ./clips
-  save_uncertain: true
+  save_uncertain: false
   uncertain_threshold: 0.5
   max_clips_per_day: 500
 
@@ -41,7 +41,7 @@ feedback:
     - martes_martes    # boommarter — 30 samples
     - martes_foina     # steenmarter — 67 samples
     - lynx_lynx        # lynx — 49 samples
-  min_pending_confidence: 0.40
+  min_pending_confidence: 0.70
   retrain_threshold: 50
 
 n8n:
