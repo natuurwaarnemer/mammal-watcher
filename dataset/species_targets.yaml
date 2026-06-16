@@ -1,4 +1,5 @@
 species:
+  # === ROOFDIEREN ===
   - scientific: "Vulpes vulpes"
     nl: "vos"
     en: "red fox"
@@ -7,24 +8,6 @@ species:
     inaturalist_taxon_id: 42051
     xeno_canto_query: "Vulpes vulpes"
     macaulay_query: "Red Fox"
-
-  - scientific: "Meles meles"
-    nl: "das"
-    en: "European badger"
-    priority: high
-    alert: true
-    inaturalist_taxon_id: 855297
-    xeno_canto_query: "Meles meles"
-    macaulay_query: "European Badger"
-
-  - scientific: "Lutra lutra"
-    nl: "otter"
-    en: "Eurasian otter"
-    priority: very_high
-    alert: true
-    inaturalist_taxon_id: 41850
-    xeno_canto_query: "Lutra lutra"
-    macaulay_query: "Eurasian Otter"
 
   - scientific: "Canis lupus"
     nl: "wolf"
@@ -44,22 +27,42 @@ species:
     xeno_canto_query: "Canis aureus"
     macaulay_query: "Golden Jackal"
 
-  - scientific: "Mustela nivalis"
-    nl: "wezel"
-    en: "least weasel"
+  - scientific: "Lynx lynx"
+    nl: "lynx"
+    en: "Eurasian lynx"
+    priority: very_high
+    alert: true
+    inaturalist_taxon_id: 41979
+    xeno_canto_query: "Lynx lynx"
+    macaulay_query: "Eurasian Lynx"
+
+  - scientific: "Felis silvestris"
+    nl: "wilde kat"
+    en: "European wildcat"
     priority: high
     alert: true
-    xeno_canto_query: "Mustela nivalis"
-    macaulay_query: "Least Weasel"
+    inaturalist_taxon_id: 118552
+    xeno_canto_query: "Felis silvestris"
+    macaulay_query: "European Wildcat"
 
-  - scientific: "Martes foina"
-    nl: "steenmarter"
-    en: "stone marten"
-    priority: medium
+  # === MARTERACHTIGEN ===
+  - scientific: "Meles meles"
+    nl: "das"
+    en: "European badger"
+    priority: high
     alert: true
-    inaturalist_taxon_id: 41800
-    xeno_canto_query: "Martes foina"
-    macaulay_query: "Stone Marten"
+    inaturalist_taxon_id: 855297
+    xeno_canto_query: "Meles meles"
+    macaulay_query: "European Badger"
+
+  - scientific: "Lutra lutra"
+    nl: "otter"
+    en: "Eurasian otter"
+    priority: very_high
+    alert: true
+    inaturalist_taxon_id: 41850
+    xeno_canto_query: "Lutra lutra"
+    macaulay_query: "Eurasian Otter"
 
   - scientific: "Martes martes"
     nl: "boommarter"
@@ -70,6 +73,99 @@ species:
     xeno_canto_query: "Martes martes"
     macaulay_query: "Pine Marten"
 
+  - scientific: "Martes foina"
+    nl: "steenmarter"
+    en: "stone marten"
+    priority: medium
+    alert: true
+    inaturalist_taxon_id: 41800
+    xeno_canto_query: "Martes foina"
+    macaulay_query: "Stone Marten"
+
+  - scientific: "Mustela erminea"
+    nl: "hermelijn"
+    en: "stoat"
+    priority: medium
+    alert: true
+    inaturalist_taxon_id: 41785
+    xeno_canto_query: "Mustela erminea"
+    macaulay_query: "Stoat"
+
+  - scientific: "Mustela nivalis"
+    nl: "wezel"
+    en: "least weasel"
+    priority: high
+    alert: true
+    inaturalist_taxon_id: 41787
+    xeno_canto_query: "Mustela nivalis"
+    macaulay_query: "Least Weasel"
+
+  - scientific: "Mustela putorius"
+    nl: "bunzing"
+    en: "European polecat"
+    priority: medium
+    alert: true
+    inaturalist_taxon_id: 41799
+    xeno_canto_query: "Mustela putorius"
+    macaulay_query: "European Polecat"
+
+  - scientific: "Neovison vison"
+    nl: "Amerikaanse nerts"
+    en: "American mink"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 41783
+    xeno_canto_query: "Neovison vison"
+    macaulay_query: "American Mink"
+
+  # === KNAAGDIEREN — EEKHOORNS ===
+  - scientific: "Sciurus vulgaris"
+    nl: "rode eekhoorn"
+    en: "red squirrel"
+    priority: medium
+    alert: false
+    inaturalist_taxon_id: 46017
+    xeno_canto_query: "Sciurus vulgaris"
+    macaulay_query: "Eurasian Red Squirrel"
+
+  - scientific: "Sciurus carolinensis"
+    nl: "grijze eekhoorn"
+    en: "gray squirrel"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 46018
+    xeno_canto_query: "Sciurus carolinensis"
+    macaulay_query: "Eastern Gray Squirrel"
+
+  # === KNAAGDIEREN — SLAAPMUIZEN ===
+  - scientific: "Glis glis"
+    nl: "eikelmuis"
+    en: "edible dormouse"
+    priority: high
+    alert: true
+    inaturalist_taxon_id: 67786
+    xeno_canto_query: "Glis glis"
+    macaulay_query: "Edible Dormouse"
+
+  - scientific: "Muscardinus avellanarius"
+    nl: "hazelmuis"
+    en: "hazel dormouse"
+    priority: high
+    alert: true
+    inaturalist_taxon_id: 67784
+    xeno_canto_query: "Muscardinus avellanarius"
+    macaulay_query: "Hazel Dormouse"
+
+  - scientific: "Eliomys quercinus"
+    nl: "relmuis"
+    en: "garden dormouse"
+    priority: high
+    alert: true
+    inaturalist_taxon_id: 67783
+    xeno_canto_query: "Eliomys quercinus"
+    macaulay_query: "Garden Dormouse"
+
+  # === KNAAGDIEREN — WOELMUIZEN / RATTEN ===
   - scientific: "Castor fiber"
     nl: "bever"
     en: "Eurasian beaver"
@@ -78,6 +174,62 @@ species:
     inaturalist_taxon_id: 43793
     xeno_canto_query: "Castor fiber"
     macaulay_query: "Eurasian Beaver"
+
+  - scientific: "Arvicola amphibius"
+    nl: "woelrat"
+    en: "water vole"
+    priority: medium
+    alert: false
+    inaturalist_taxon_id: 43799
+    xeno_canto_query: "Arvicola amphibius"
+    macaulay_query: "Water Vole"
+
+  - scientific: "Cricetus cricetus"
+    nl: "korenwolf"
+    en: "European hamster"
+    priority: high
+    alert: true
+    inaturalist_taxon_id: 47988
+    xeno_canto_query: "Cricetus cricetus"
+    macaulay_query: "European Hamster"
+
+  - scientific: "Rattus norvegicus"
+    nl: "bruine rat"
+    en: "brown rat"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 47218
+    xeno_canto_query: "Rattus norvegicus"
+    macaulay_query: "Brown Rat"
+
+  - scientific: "Rattus rattus"
+    nl: "zwarte rat"
+    en: "black rat"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 47219
+    xeno_canto_query: "Rattus rattus"
+    macaulay_query: "Black Rat"
+
+  # === INSECTENETERS ===
+  - scientific: "Erinaceus europaeus"
+    nl: "egel"
+    en: "European hedgehog"
+    priority: medium
+    alert: false
+    inaturalist_taxon_id: 70323
+    xeno_canto_query: "Erinaceus europaeus"
+    macaulay_query: "Western European Hedgehog"
+
+  # === HOEFDIEREN ===
+  - scientific: "Sus scrofa"
+    nl: "wild zwijn"
+    en: "wild boar"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 42158
+    xeno_canto_query: "Sus scrofa"
+    macaulay_query: "Wild Boar"
 
   - scientific: "Capreolus capreolus"
     nl: "ree"
@@ -97,20 +249,57 @@ species:
     xeno_canto_query: "Cervus elaphus"
     macaulay_query: "Red Deer"
 
-  - scientific: "Sus scrofa"
-    nl: "wild zwijn"
-    en: "wild boar"
+  - scientific: "Dama dama"
+    nl: "damhert"
+    en: "fallow deer"
     priority: low
     alert: false
-    inaturalist_taxon_id: 42158
-    xeno_canto_query: "Sus scrofa"
-    macaulay_query: "Wild Boar"
+    inaturalist_taxon_id: 42163
+    xeno_canto_query: "Dama dama"
+    macaulay_query: "Fallow Deer"
 
-  - scientific: "Lynx lynx"
-    nl: "lynx"
-    en: "Eurasian lynx"
-    priority: very_high
+  - scientific: "Alces alces"
+    nl: "eland"
+    en: "moose"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 42178
+    xeno_canto_query: "Alces alces"
+    macaulay_query: "Moose"
+
+  - scientific: "Bison bonasus"
+    nl: "wisent"
+    en: "European bison"
+    priority: medium
     alert: true
-    inaturalist_taxon_id: 41979
-    xeno_canto_query: "Lynx lynx"
-    macaulay_query: "Eurasian Lynx"
+    inaturalist_taxon_id: 42395
+    xeno_canto_query: "Bison bonasus"
+    macaulay_query: "European Bison"
+
+  # === HAASACHTIGEN ===
+  - scientific: "Lepus europaeus"
+    nl: "haas"
+    en: "brown hare"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 43151
+    xeno_canto_query: "Lepus europaeus"
+    macaulay_query: "European Hare"
+
+  - scientific: "Lepus timidus"
+    nl: "sneeuwhaas"
+    en: "mountain hare"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 43152
+    xeno_canto_query: "Lepus timidus"
+    macaulay_query: "Mountain Hare"
+
+  - scientific: "Oryctolagus cuniculus"
+    nl: "konijn"
+    en: "European rabbit"
+    priority: low
+    alert: false
+    inaturalist_taxon_id: 43155
+    xeno_canto_query: "Oryctolagus cuniculus"
+    macaulay_query: "European Rabbit"
