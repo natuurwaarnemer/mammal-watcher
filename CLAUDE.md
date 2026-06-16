@@ -45,7 +45,7 @@ CONTEXT.md bevat de projectvisie en roadmap; dit bestand bevat de technische wer
 ├── dataset/
 │   ├── download_birdnet_clips.py        ← NUC2 clips downloaden (--species filter beschikbaar)
 │   ├── download_naturelm.py             ← NatureLM soorten + background via streaming
-│   ├── species_targets.yaml             ← 13 doelsoorten voor NatureLM download
+│   ├── species_targets.yaml             ← 33 NL/DE doelsoorten voor NatureLM download
 │   └── extract_features.py             ← VEROUDERD, niet gebruiken
 ├── models/
 │   └── mammal_mlp.pt                    ← huidig actief model
@@ -249,13 +249,16 @@ feedback:
 
 ---
 
-## Volgende stappen (stand 2026-06-15)
+## Volgende stappen (stand 2026-06-16)
 
-**Nu bezig (nacht 2026-06-15/16):**
-- Corvid download NUC2 → `/mnt/usb/prepared/background/` (log: `/tmp/corvid_download.log`)
-- NatureLM download → `/mnt/usb/prepared/` (tmux: `naturelm`, log: `/tmp/naturelm_download.log`)
+**Nu bezig:**
+- NatureLM single-pass download -- tmux `naturelm`, log: `/tmp/naturelm_download.log`
+  - 33 soorten, max 500 clips/soort + 2000 background clips
+  - Script: `venv/bin/python dataset/download_naturelm.py --max-per-species 500 --background-clips 2000`
+- mammal-watcher container: **GESTOPT** -- wacht op hertraining
+- Corvid download: KLAAR (580 clips in /mnt/usb/prepared/background/)
 
-**Na beide downloads klaar:**
+**Na NatureLM download klaar -- NIET meer:
 1. Embeddings herextracten (alleen nieuwe bestanden, bestaande worden overgeslagen):
    ```bash
    source ~/mammal-watcher/venv/bin/activate
