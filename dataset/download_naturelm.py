@@ -1,11 +1,9 @@
 """
 Download zoogdiergeluiden via NatureLM dataset (Earth Species Project) van Hugging Face.
 
-Strategie:
-  1. Laad alleen Parquet metadata kolommen (id, task, output) — geen audio bytes → minuten i.p.v. uren
-  2. Filter in-memory op gewenste soorten en sla index op als checkpoint JSON
-  3. Download alleen audio voor matching IDs via streaming pass
-  4. Sla op als WAV via soundfile
+Strategie: één streaming pass — match soort en sla audio direct op.
+Voortgang staat op schijf (bestaande WAV-bestanden), geen checkpoint JSON nodig.
+Bij herstart worden bestaande clips overgeslagen.
 
 Gebruik (soorten downloaden naar prepared dir):
     python dataset/download_naturelm.py \
@@ -13,13 +11,13 @@ Gebruik (soorten downloaden naar prepared dir):
         --species-file dataset/species_targets.yaml \
         --max-per-species 500
 
-Gebruik (background downloaden via NatureLM WavCaps/UrbanSound):
+Gebruik (background downloaden via WavCaps/UrbanSound/AudioCaps):
     python dataset/download_naturelm.py \
         --output /mnt/usb/prepared \
         --skip-species \
         --background-clips 2000
 
-Gebruik (alles tegelijk — soorten + background):
+Gebruik (alles tegelijk):
     python dataset/download_naturelm.py \
         --output /mnt/usb/prepared \
         --max-per-species 500 \
@@ -77,10 +75,6 @@ def _load_species(yaml_path: Path) -> list[dict]:
     return data["species"]
 
 
-def _scientific_names(species_list: list[dict]) -> set[str]:
-    return {s["scientific"].lower() for s in species_list}
-
-
 def _extract_species_from_output(output: str) -> str:
     """Laatste 2 woorden van taxonomie = genus + soort."""
     if not output or not isinstance(output, str):
@@ -91,107 +85,32 @@ def _extract_species_from_output(output: str) -> str:
     return output.strip()
 
 
-def _build_index(
-    species_list: list[dict],
-    max_per_species: int,
-    debug: bool,
-    checkpoint_path: Path,
-    force_reindex: bool = False,
-) -> dict[str, list[str]]:
-    """
-    Stap 1: Laad metadata via Parquet (geen audio), filter op soorten.
-    Bouwt index {slug: [id, ...]} van alle matching samples.
-    Slaat de index op als checkpoint JSON voor herstart.
-    """
-    # Laad checkpoint als het bestaat en --force-reindex niet gezet is
-    if not force_reindex and checkpoint_path.exists():
-        print(f"📂 Checkpoint gevonden: {checkpoint_path}")
-        try:
-            with checkpoint_path.open(encoding="utf-8") as fh:
-                data: dict[str, list[str]] = json.load(fh)
-            total = sum(len(v) for v in data.values())
-            print(f"  ✓ Index geladen uit checkpoint: {total} opnames")
-            return data
-        except Exception as exc:
-            print(f"  ⚠ Checkpoint laden mislukt ({exc}), herbouw index...", file=sys.stderr)
-
-    print("📋 Stap 1: Metadata streamen (vroege exit zodra alle soorten vol zijn)...")
-    target_names = _scientific_names(species_list)
-
-    try:
-        ds_meta = load_dataset(
-            NATURELM_DATASET,
-            split="train",
-            streaming=True,
-        )
-    except Exception as exc:
-        print(f"⚠ Dataset laden mislukt: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"  Filter op {len(species_list)} soorten (max {max_per_species} per soort)...")
-    index: dict[str, list[str]] = {_slug(s["scientific"]): [] for s in species_list}
-    found_total = 0
-    scanned = 0
-
-    def _all_done() -> bool:
-        return all(len(index[_slug(s["scientific"])]) >= max_per_species for s in species_list)
-
-    iterator = tqdm(ds_meta, desc="Streaming", unit=" samples") if HAS_TQDM else ds_meta
-
-    for sample in iterator:
-        scanned += 1
-        if _all_done():
-            break
-
-        task = sample.get("task") or ""
-        if "taxonomic" not in task:
-            continue
-
-        output = sample.get("output") or ""
-        species_name = _extract_species_from_output(output).lower()
-
-        if species_name not in target_names:
-            continue
-
-        slug = _slug(species_name)
-        sample_id = sample.get("id") or ""
-        if sample_id and len(index[slug]) < max_per_species:
-            index[slug].append(sample_id)
-            found_total += 1
-            if debug:
-                print(f"  ✓ {species_name} → {sample_id}")
-
-            # Tussentijds checkpoint elke 50 matches
-            if found_total % 50 == 0:
-                try:
-                    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-                    with checkpoint_path.open("w", encoding="utf-8") as fh:
-                        json.dump(index, fh, ensure_ascii=False)
-                except Exception:
-                    pass
-
-    print(f"  Gescand: {scanned:,} samples, gevonden: {found_total} matches")
-
-    for species_info in species_list:
-        slug = _slug(species_info["scientific"])
-        n = len(index.get(slug, []))
-        print(f"  {'✓' if n > 0 else '✗'} {species_info['scientific']}: {n} matches")
-
-    # Sla index op als checkpoint
-    try:
-        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-        with checkpoint_path.open("w", encoding="utf-8") as fh:
-            json.dump(index, fh, ensure_ascii=False, indent=2)
-        print(f"  Index opgeslagen: {checkpoint_path}")
-    except Exception as exc:
-        print(f"  ⚠ Checkpoint opslaan mislukt: {exc}", file=sys.stderr)
-
-    return index
+def _count_existing(species_dir: Path) -> int:
+    """Tel bestaande WAV-bestanden — dit is de voortgang na herstart."""
+    if not species_dir.exists():
+        return 0
+    return sum(1 for _ in species_dir.glob("*.wav"))
 
 
 def _save_audio_as_wav(audio_data, dest: Path, sample_rate: int = SAMPLE_RATE) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
+        # torchcodec backend: AudioDecoder → AudioSamples
+        try:
+            from torchcodec.decoders import AudioDecoder as _AudioDecoder
+            if isinstance(audio_data, _AudioDecoder):
+                samples = audio_data.get_all_samples()
+                sr = samples.sample_rate or sample_rate
+                if HAS_NUMPY and HAS_SOUNDFILE:
+                    array = samples.data.numpy()
+                    if array.ndim == 2:
+                        array = array.mean(axis=0)
+                    array = array.astype("float32")
+                    sf.write(str(dest), array, sr, subtype="PCM_16")
+                    return True
+        except ImportError:
+            pass
+
         if isinstance(audio_data, dict):
             array = audio_data.get("array")
             sr = audio_data.get("sampling_rate", sample_rate)
@@ -209,14 +128,14 @@ def _save_audio_as_wav(audio_data, dest: Path, sample_rate: int = SAMPLE_RATE) -
 
         import struct
         if isinstance(audio_data, dict):
-            samples = audio_data.get("array", [])
+            raw_samples = audio_data.get("array", [])
             sr = audio_data.get("sampling_rate", sample_rate)
         else:
-            samples = list(audio_data) if audio_data else []
+            raw_samples = list(audio_data) if audio_data else []
             sr = sample_rate
-        if not samples:
+        if not raw_samples:
             return False
-        pcm = [max(-32768, min(32767, int(float(s) * 32767))) for s in samples]
+        pcm = [max(-32768, min(32767, int(float(s) * 32767))) for s in raw_samples]
         raw = struct.pack(f"<{len(pcm)}h", *pcm)
         with wave.open(str(dest), "wb") as wf:
             wf.setnchannels(1)
@@ -229,105 +148,117 @@ def _save_audio_as_wav(audio_data, dest: Path, sample_rate: int = SAMPLE_RATE) -
         return False
 
 
-def _save_metadata(records: list[dict], dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("w", encoding="utf-8") as fh:
-        for rec in records:
-            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-
 def download_from_naturelm(
     species_list: list[dict],
     output_dir: Path,
     max_per_species: int,
     debug: bool = False,
-    checkpoint_path: Path | None = None,
-    force_reindex: bool = False,
 ) -> dict[str, int]:
+    """Één streaming pass: match soort en sla audio direct op."""
     if not HAS_DATASETS:
         print("⚠ pip install datasets", file=sys.stderr)
         sys.exit(1)
 
-    if checkpoint_path is None:
-        checkpoint_path = output_dir.parent / "index_checkpoint.json"
+    # Voortgang van vorige run: tel bestaande WAV-bestanden per soort
+    counters: dict[str, int] = {}
+    for s in species_list:
+        slug = _slug(s["scientific"])
+        existing = _count_existing(output_dir / slug)
+        counters[slug] = existing
 
-    species_by_name = {s["scientific"].lower(): s for s in species_list}
-    counters: dict[str, int] = {_slug(s["scientific"]): 0 for s in species_list}
-    metadata_buffers: dict[str, list[dict]] = {_slug(s["scientific"]): [] for s in species_list}
+    # Toon startpositie
+    total_existing = sum(counters.values())
+    if total_existing:
+        print(f"📂 Voortgang gevonden: {total_existing} clips al aanwezig")
+        for s in species_list:
+            slug = _slug(s["scientific"])
+            n = counters[slug]
+            if n:
+                print(f"  ✓ {s['nl']:20s}: {n}/{max_per_species}")
 
-    # === STAP 1: Index bouwen via Parquet metadata (geen audio) ===
-    index = _build_index(species_list, max_per_species, debug, checkpoint_path, force_reindex)
+    target_names = {s["scientific"].lower(): _slug(s["scientific"]) for s in species_list}
+    species_nl = {_slug(s["scientific"]): s.get("nl", _slug(s["scientific"])) for s in species_list}
 
-    total_matches = sum(len(v) for v in index.values())
-    print(f"\n  Totaal: {total_matches} opnames gevonden")
-    for species_info in species_list:
-        slug = _slug(species_info["scientific"])
-        n = len(index.get(slug, []))
-        print(f"  {'✓' if n > 0 else '✗'} {species_info['nl']:20s}: {n} opnames")
+    def all_done() -> bool:
+        return all(counters[_slug(s["scientific"])] >= max_per_species for s in species_list)
 
-    if total_matches == 0:
-        print("\n⚠ Geen matches gevonden.", file=sys.stderr)
+    if all_done():
+        print("✓ Alle soorten al op quota — niets te doen.")
         return counters
 
-    # Maak set van gewenste IDs
-    wanted_ids: dict[str, str] = {}
-    for slug, ids in index.items():
-        for sample_id in ids[:max_per_species]:
-            wanted_ids[sample_id] = slug
+    needed = {slug: max_per_species - n for slug, n in counters.items() if n < max_per_species}
+    print(f"\n📡 Streamen — {sum(needed.values())} clips nodig voor {len(needed)} soort(en)...")
+    for s in species_list:
+        slug = _slug(s["scientific"])
+        if slug in needed:
+            print(f"  • {s['nl']:20s}: nog {needed[slug]} clips")
 
-    print(f"\n📡 Stap 2: Audio downloaden voor {len(wanted_ids)} opnames...")
-
-    # === STAP 2: Audio ophalen (met decoding) ===
     try:
-        ds_audio = load_dataset(NATURELM_DATASET, split="train", streaming=True)
+        ds = load_dataset(NATURELM_DATASET, split="train", streaming=True)
     except Exception as exc:
         print(f"⚠ Dataset laden mislukt: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    remaining = set(wanted_ids.keys())
-    iterator = tqdm(ds_audio, desc="Audio ophalen", unit=" samples") if HAS_TQDM else ds_audio
+    saved_total = 0
+    scanned = 0
+    errors = 0
+    iterator = tqdm(ds, desc="Streaming", unit=" samples") if HAS_TQDM else ds
 
     for sample in iterator:
-        if not remaining:
+        if all_done():
             break
-        sample_id = sample.get("id") or ""
-        if sample_id not in remaining:
-            continue
-        remaining.discard(sample_id)
-        slug = wanted_ids[sample_id]
-        if counters[slug] >= max_per_species:
+
+        scanned += 1
+
+        task = sample.get("task") or ""
+        if "taxonomic" not in task:
             continue
 
         output = sample.get("output") or ""
         species_name = _extract_species_from_output(output).lower()
-        species_info = species_by_name.get(species_name, {})
 
-        dest = output_dir / slug / f"{sample_id}.wav"
-        if dest.exists():
-            counters[slug] += 1
+        if species_name not in target_names:
+            continue
+
+        slug = target_names[species_name]
+        if counters[slug] >= max_per_species:
             continue
 
         audio = sample.get("audio")
         if not audio:
             continue
 
+        sample_id = re.sub(r"[^\w\-]", "_", sample.get("id") or f"sample_{scanned}")
+        dest = output_dir / slug / f"{sample_id}.wav"
+
+        if dest.exists():
+            counters[slug] += 1
+            continue
+
         if _save_audio_as_wav(audio, dest):
             counters[slug] += 1
-            meta = {k: v for k, v in sample.items() if k not in ("audio", "audio_array")}
-            meta["source"] = NATURELM_DATASET
-            meta["local_file"] = str(dest)
-            metadata_buffers[slug].append(meta)
-            if debug and species_info:
-                print(f"  ✓ {species_info.get('nl', slug)}: {dest.name}")
+            saved_total += 1
+            if debug:
+                print(f"  ✓ {species_nl[slug]:20s}: {dest.name} ({counters[slug]}/{max_per_species})")
+            elif saved_total % 10 == 0:
+                # Periodieke voortgangsupdate zonder debug
+                parts = [f"{species_nl[s['scientific'].lower().replace(' ','_')]}: {counters[_slug(s['scientific'])]}" 
+                         for s in species_list if counters[_slug(s["scientific"])] > 0]
+                print(f"\r  [{saved_total} opgeslagen] " + " | ".join(parts[:5]), end="", flush=True)
+        else:
+            errors += 1
 
-    for species_info in species_list:
-        slug = _slug(species_info["scientific"])
-        meta_list = metadata_buffers[slug]
-        if meta_list:
-            _save_metadata(meta_list, output_dir / slug / "metadata.jsonl")
+    if saved_total:
+        print()  # newline na \r updates
+
+    print(f"\n📊 Resultaat ({scanned:,} samples gescand, {saved_total} nieuw opgeslagen, {errors} fouten):")
+    for s in species_list:
+        slug = _slug(s["scientific"])
+        n = counters[slug]
+        status = "✓" if n >= max_per_species else ("~" if n > 0 else "✗")
+        print(f"  {status} {s['nl']:20s} ({s['scientific']}): {n}/{max_per_species}")
 
     return counters
-
 
 
 def _download_background(
@@ -336,7 +267,7 @@ def _download_background(
     max_clips: int,
     debug: bool = False,
 ) -> int:
-    """Stream WavCaps/UrbanSound/AudioCaps samples als background-klasse."""
+    """Eén streaming pass voor WavCaps/UrbanSound/AudioCaps als background-klasse."""
     bg_dir = output_dir / "background"
     bg_dir.mkdir(parents=True, exist_ok=True)
 
@@ -346,8 +277,8 @@ def _download_background(
         print(f"  Background al volledig ({len(existing)} clips aanwezig)")
         return len(existing)
 
-    print(f"\n Achtergrond downloaden ({', '.join(sorted(sources))})...")
-    print(f"  Doel: {max_clips} clips, al aanwezig: {len(existing)}")
+    print(f"\n🌿 Background streamen ({', '.join(sorted(sources))})...")
+    print(f"  Doel: {max_clips} clips, al aanwezig: {len(existing)}, nog nodig: {remaining}")
 
     try:
         ds = load_dataset(NATURELM_DATASET, split="train", streaming=True)
@@ -366,8 +297,8 @@ def _download_background(
         if not any(s.lower() in source.lower() for s in sources):
             continue
 
-        sample_id = (sample.get("id") or "").replace("/", "_")
-        if sample_id in existing:
+        sample_id = re.sub(r"[^\w\-]", "_", (sample.get("id") or ""))
+        if not sample_id or sample_id in existing:
             continue
 
         dest = bg_dir / f"bg_{sample_id}.wav"
@@ -395,19 +326,12 @@ def main() -> None:
     parser.add_argument("--output", default="/mnt/usb/prepared")
     parser.add_argument("--max-per-species", type=int, default=50)
     parser.add_argument("--species-file", default="dataset/species_targets.yaml")
-    parser.add_argument("--dataset", default=NATURELM_DATASET)
     parser.add_argument("--background-clips", type=int, default=0,
-                        help="Aantal background clips via WavCaps/UrbanSound/AudioCaps (0 = uit)")
-    parser.add_argument("--background-sources", default="WavCaps,UrbanSound,AudioCaps",
-                        help="Kommagescheiden bronnen voor background (standaard: WavCaps,UrbanSound,AudioCaps)")
+                        help="Aantal background clips (0 = uit)")
+    parser.add_argument("--background-sources", default="WavCaps,UrbanSound,AudioCaps")
     parser.add_argument("--skip-species", action="store_true",
                         help="Sla soort-download over, doe alleen background")
     parser.add_argument("--debug", action="store_true")
-    parser.add_argument(
-        "--force-reindex",
-        action="store_true",
-        help="Negeer bestaand checkpoint en herbouw de index",
-    )
     args = parser.parse_args()
 
     output_dir = Path(args.output)
@@ -424,26 +348,22 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"NatureLM downloader — {len(species_list)} soort(en), max {args.max_per_species} per soort")
-    print(f"Dataset: {args.dataset}")
-    print(f"Uitvoer: {output_dir.resolve()}\n")
+    print(f"Dataset : {NATURELM_DATASET}")
+    print(f"Uitvoer : {output_dir.resolve()}\n")
 
-    counters = download_from_naturelm(
-        species_list,
-        output_dir,
-        args.max_per_species,
-        debug=args.debug,
-        force_reindex=args.force_reindex,
-    )
+    if not args.skip_species:
+        download_from_naturelm(
+            species_list,
+            output_dir,
+            args.max_per_species,
+            debug=args.debug,
+        )
 
-    print("\n📊 Resultaat:")
-    total = 0
-    for species_info in species_list:
-        slug = _slug(species_info["scientific"])
-        count = counters[slug]
-        total += count
-        status = "✓" if count > 0 else "✗"
-        print(f"  {status} {species_info['nl']:20s} ({species_info['scientific']}): {count}")
-    print(f"\n✅ Klaar! Totaal: {total} opname(s) in {output_dir.resolve()}")
+    if args.background_clips > 0:
+        sources = {s.strip() for s in args.background_sources.split(",")}
+        _download_background(output_dir, sources, args.background_clips, debug=args.debug)
+
+    print("\n✅ Klaar!")
 
 
 if __name__ == "__main__":
