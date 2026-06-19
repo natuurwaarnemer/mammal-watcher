@@ -64,6 +64,33 @@ NATURELM_DATASET = "EarthSpeciesProject/NatureLM-audio-training"
 SAMPLE_RATE = 16000
 BACKGROUND_SOURCES = {"WavCaps", "UrbanSound", "UrbanSound8K", "AudioCaps"}
 
+CHECKPOINT_FILE = Path("/mnt/usb/naturelm_checkpoint.json")
+
+
+def _load_checkpoint() -> int:
+    """Laad streaming positie van vorige afgebroken run."""
+    try:
+        if CHECKPOINT_FILE.exists():
+            return int(json.loads(CHECKPOINT_FILE.read_text()).get("scanned", 0))
+    except Exception:
+        pass
+    return 0
+
+
+def _save_checkpoint(scanned: int) -> None:
+    try:
+        CHECKPOINT_FILE.write_text(json.dumps({"scanned": scanned}))
+    except Exception:
+        pass
+
+
+def _clear_checkpoint() -> None:
+    try:
+        CHECKPOINT_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 
 def _slug(scientific: str) -> str:
     return re.sub(r"\s+", "_", scientific.strip().lower())
@@ -199,16 +226,24 @@ def download_from_naturelm(
         print(f"⚠ Dataset laden mislukt: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    start_scanned = _load_checkpoint()
+    if start_scanned > 0:
+        print(f"\u23e9 Checkpoint: hervatten vanaf sample {start_scanned:,} ...")
+        ds = ds.skip(start_scanned)
+    scanned = start_scanned
+
     saved_total = 0
-    scanned = 0
     errors = 0
-    iterator = tqdm(ds, desc="Streaming", unit=" samples") if HAS_TQDM else ds
+    iterator = tqdm(ds, desc="Streaming", unit=" samples", initial=start_scanned) if HAS_TQDM else ds
 
     for sample in iterator:
         if all_done():
+            _clear_checkpoint()
             break
 
         scanned += 1
+        if scanned % 10_000 == 0:
+            _save_checkpoint(scanned)
 
         task = sample.get("task") or ""
         if "taxonomic" not in task:
@@ -247,6 +282,9 @@ def download_from_naturelm(
                 print(f"\r  [{saved_total} opgeslagen] " + " | ".join(parts[:5]), end="", flush=True)
         else:
             errors += 1
+
+    else:
+        _clear_checkpoint()  # stream volledig doorlopen
 
     if saved_total:
         print()  # newline na \r updates
