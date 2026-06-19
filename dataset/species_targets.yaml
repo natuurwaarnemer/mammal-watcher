@@ -5,7 +5,7 @@ species:
     en: "red fox"
     priority: high
     alert: true
-    inaturalist_taxon_id: 42051
+    inaturalist_taxon_id: 42069
     xeno_canto_query: "Vulpes vulpes"
     macaulay_query: "Red Fox"
 
@@ -41,7 +41,7 @@ species:
     en: "European wildcat"
     priority: high
     alert: true
-    inaturalist_taxon_id: 118552
+    inaturalist_taxon_id: 922459
     xeno_canto_query: "Felis silvestris"
     macaulay_query: "European Wildcat"
 
@@ -87,7 +87,7 @@ species:
     en: "stoat"
     priority: medium
     alert: true
-    inaturalist_taxon_id: 41785
+    inaturalist_taxon_id: 41808
     xeno_canto_query: "Mustela erminea"
     macaulay_query: "Stoat"
 
@@ -96,7 +96,7 @@ species:
     en: "least weasel"
     priority: high
     alert: true
-    inaturalist_taxon_id: 41787
+    inaturalist_taxon_id: 569428
     xeno_canto_query: "Mustela nivalis"
     macaulay_query: "Least Weasel"
 
@@ -105,7 +105,7 @@ species:
     en: "European polecat"
     priority: medium
     alert: true
-    inaturalist_taxon_id: 41799
+    inaturalist_taxon_id: 41812
     xeno_canto_query: "Mustela putorius"
     macaulay_query: "European Polecat"
 
@@ -114,7 +114,7 @@ species:
     en: "American mink"
     priority: low
     alert: false
-    inaturalist_taxon_id: 41783
+    inaturalist_taxon_id: 1264432
     xeno_canto_query: "Neovison vison"
     macaulay_query: "American Mink"
 
@@ -124,7 +124,7 @@ species:
     en: "red squirrel"
     priority: medium
     alert: false
-    inaturalist_taxon_id: 46017
+    inaturalist_taxon_id: 46001
     xeno_canto_query: "Sciurus vulgaris"
     macaulay_query: "Eurasian Red Squirrel"
 
@@ -133,7 +133,7 @@ species:
     en: "gray squirrel"
     priority: low
     alert: false
-    inaturalist_taxon_id: 46018
+    inaturalist_taxon_id: 46017
     xeno_canto_query: "Sciurus carolinensis"
     macaulay_query: "Eastern Gray Squirrel"
 
@@ -143,7 +143,7 @@ species:
     en: "edible dormouse"
     priority: high
     alert: true
-    inaturalist_taxon_id: 67786
+    inaturalist_taxon_id: 74383
     xeno_canto_query: "Glis glis"
     macaulay_query: "Edible Dormouse"
 
@@ -152,7 +152,7 @@ species:
     en: "hazel dormouse"
     priority: high
     alert: true
-    inaturalist_taxon_id: 67784
+    inaturalist_taxon_id: 45856
     xeno_canto_query: "Muscardinus avellanarius"
     macaulay_query: "Hazel Dormouse"
 
@@ -161,7 +161,7 @@ species:
     en: "garden dormouse"
     priority: high
     alert: true
-    inaturalist_taxon_id: 67783
+    inaturalist_taxon_id: 45863
     xeno_canto_query: "Eliomys quercinus"
     macaulay_query: "Garden Dormouse"
 
@@ -180,7 +180,7 @@ species:
     en: "water vole"
     priority: medium
     alert: false
-    inaturalist_taxon_id: 43799
+    inaturalist_taxon_id: 67819
     xeno_canto_query: "Arvicola amphibius"
     macaulay_query: "Water Vole"
 
@@ -189,7 +189,7 @@ species:
     en: "European hamster"
     priority: high
     alert: true
-    inaturalist_taxon_id: 47988
+    inaturalist_taxon_id: 45836
     xeno_canto_query: "Cricetus cricetus"
     macaulay_query: "European Hamster"
 
@@ -198,7 +198,7 @@ species:
     en: "brown rat"
     priority: low
     alert: false
-    inaturalist_taxon_id: 47218
+    inaturalist_taxon_id: 44576
     xeno_canto_query: "Rattus norvegicus"
     macaulay_query: "Brown Rat"
 
@@ -207,7 +207,7 @@ species:
     en: "black rat"
     priority: low
     alert: false
-    inaturalist_taxon_id: 47219
+    inaturalist_taxon_id: 44575
     xeno_canto_query: "Rattus rattus"
     macaulay_query: "Black Rat"
 
@@ -217,7 +217,7 @@ species:
     en: "European hedgehog"
     priority: medium
     alert: false
-    inaturalist_taxon_id: 70323
+    inaturalist_taxon_id: 43042
     xeno_canto_query: "Erinaceus europaeus"
     macaulay_query: "Western European Hedgehog"
 
@@ -227,7 +227,7 @@ species:
     en: "wild boar"
     priority: low
     alert: false
-    inaturalist_taxon_id: 42158
+    inaturalist_taxon_id: 42134
     xeno_canto_query: "Sus scrofa"
     macaulay_query: "Wild Boar"
 
@@ -254,7 +254,7 @@ species:
     en: "fallow deer"
     priority: low
     alert: false
-    inaturalist_taxon_id: 42163
+    inaturalist_taxon_id: 42161
     xeno_canto_query: "Dama dama"
     macaulay_query: "Fallow Deer"
 
@@ -263,7 +263,7 @@ species:
     en: "moose"
     priority: low
     alert: false
-    inaturalist_taxon_id: 42178
+    inaturalist_taxon_id: 522193
     xeno_canto_query: "Alces alces"
     macaulay_query: "Moose"
 
@@ -272,7 +272,7 @@ species:
     en: "European bison"
     priority: medium
     alert: true
-    inaturalist_taxon_id: 42395
+    inaturalist_taxon_id: 42407
     xeno_canto_query: "Bison bonasus"
     macaulay_query: "European Bison"
 
@@ -282,7 +282,7 @@ species:
     en: "brown hare"
     priority: low
     alert: false
-    inaturalist_taxon_id: 43151
+    inaturalist_taxon_id: 43128
     xeno_canto_query: "Lepus europaeus"
     macaulay_query: "European Hare"
 
@@ -291,7 +291,7 @@ species:
     en: "mountain hare"
     priority: low
     alert: false
-    inaturalist_taxon_id: 43152
+    inaturalist_taxon_id: 55908
     xeno_canto_query: "Lepus timidus"
     macaulay_query: "Mountain Hare"
 
@@ -300,6 +300,6 @@ species:
     en: "European rabbit"
     priority: low
     alert: false
-    inaturalist_taxon_id: 43155
+    inaturalist_taxon_id: 43151
     xeno_canto_query: "Oryctolagus cuniculus"
     macaulay_query: "European Rabbit"
