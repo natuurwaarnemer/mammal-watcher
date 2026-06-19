@@ -165,6 +165,29 @@ python dataset/download_naturelm.py --skip-species --background-clips 2000
 # Checkpoint: herstart gewoon opnieuw, slaat bestaande bestanden over
 ```
 
+### iNaturalist — soortspecifieke clips (NIEUW — taxon IDs gecorrigeerd PR #47)
+
+Download ruwe audio per soort via open iNaturalist API (geen key nodig).
+Draait in tmux sessie 'inaturalist': `tmux attach -t inaturalist`
+
+```bash
+# Stap 1: download ruwe MP3/OGG per soort
+source ~/mammal-watcher/venv/bin/activate
+python dataset/download_inaturalist.py \
+    --species-file dataset/species_targets.yaml \
+    --output /tmp/inat_raw \
+    --max-per-species 500
+
+# Stap 2: verwerk naar 16kHz WAV chunks → prepared dir
+python dataset/prepare_dataset.py \
+    --input /tmp/inat_raw \
+    --output /mnt/usb/prepared \
+    --species-file dataset/species_targets.yaml
+```
+
+Beschikbare clips (top): vos 1702, grijze eekhoorn 2586, ree 723, edelhert 181,
+goudjakhals 196, wolf 141, rode eekhoorn 117, wild zwijn 119, eikelmuis 85, relmuis 64.
+
 ### BirdNET-Go NUC2 API
 
 ```bash
@@ -246,19 +269,25 @@ feedback:
 | #41 | feat: `--species` filter in download_birdnet_clips.py (corviden) | ✅ main |
 | #42 | feat: NatureLM output → /mnt/usb/prepared + background modus | ✅ main |
 | #43 | fix: NatureLM metadata scan via streaming met vroege exit | ✅ main |
+| #44 | refactor: single-pass streaming NatureLM (match + download in één loop) | ✅ main |
+| #45 | feat: species_targets.yaml uitgebreid van 13 → 33 NL/DE soorten | ✅ main |
+| #46 | feat: stream-checkpoint NatureLM — herstart vanaf opgeslagen positie | ✅ main |
+| #47 | fix: 23 foute iNaturalist taxon IDs gecorrigeerd (vos stond op coyote etc.) | ✅ main |
 
 ---
 
 ## Volgende stappen (stand 2026-06-16)
 
-**Nu bezig:**
-- NatureLM single-pass download -- tmux `naturelm`, log: `/tmp/naturelm_download.log`
-  - 33 soorten, max 500 clips/soort + 2000 background clips
-  - Script: `venv/bin/python dataset/download_naturelm.py --max-per-species 500 --background-clips 2000`
-- mammal-watcher container: **GESTOPT** -- wacht op hertraining
-- Corvid download: KLAAR (580 clips in /mnt/usb/prepared/background/)
+**Nu bezig (stand 2026-06-19):**
+- **NatureLM download** — tmux `naturelm`, log: `/tmp/naturelm_download.log`
+  - Heeft nu **checkpoint** (PR #46): herstart vanaf opgeslagen positie in `/mnt/usb/naturelm_checkpoint.json`
+  - Watchdog: `naturelm_watchdog.sh` via cron `0 * * * *` — herstart alleen als script dood is
+- **iNaturalist download** — tmux `inaturalist` (gestart 2026-06-19 ~16:00)
+  - Output: `/tmp/inat_raw/` → daarna `prepare_dataset.py` → `/mnt/usb/prepared/`
+  - Na voltooiing: `venv/bin/python dataset/prepare_dataset.py --input /tmp/inat_raw --output /mnt/usb/prepared --species-file dataset/species_targets.yaml`
+- mammal-watcher container: **GESTOPT** — wacht op hertraining
 
-**Na NatureLM download klaar -- NIET meer:
+**Na beide downloads klaar — NIET meer:
 1. Embeddings herextracten (alleen nieuwe bestanden, bestaande worden overgeslagen):
    ```bash
    source ~/mammal-watcher/venv/bin/activate
