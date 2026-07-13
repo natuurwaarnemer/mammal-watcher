@@ -100,17 +100,6 @@
       "gbif_taxon_key": 2440905
     },
     {
-      "scientific": "Dama dama",
-      "nl": "damhert",
-      "en": "fallow deer",
-      "emoji": "🦌",
-      "family": "Cervidae",
-      "inaturalist_taxon_id": 42161,
-      "priority": "low",
-      "alert": false,
-      "gbif_taxon_key": 5220136
-    },
-    {
       "scientific": "Sus scrofa",
       "nl": "wild zwijn",
       "en": "wild boar",
@@ -188,28 +177,6 @@
       "gbif_taxon_key": 2439658
     },
     {
-      "scientific": "Erinaceus europaeus",
-      "nl": "egel",
-      "en": "European hedgehog",
-      "emoji": "🦔",
-      "family": "Erinaceidae",
-      "inaturalist_taxon_id": 43042,
-      "priority": "medium",
-      "alert": false,
-      "gbif_taxon_key": 5219616
-    },
-    {
-      "scientific": "Oryctolagus cuniculus",
-      "nl": "konijn",
-      "en": "European rabbit",
-      "emoji": "🐇",
-      "family": "Leporidae",
-      "inaturalist_taxon_id": 43151,
-      "priority": "low",
-      "alert": false,
-      "gbif_taxon_key": 2436940
-    },
-    {
       "scientific": "Lepus europaeus",
       "nl": "haas",
       "en": "brown hare",
@@ -221,17 +188,6 @@
       "gbif_taxon_key": 7952072
     },
     {
-      "scientific": "Mustela putorius",
-      "nl": "bunzing",
-      "en": "European polecat",
-      "emoji": "🐾",
-      "family": "Mustelidae",
-      "inaturalist_taxon_id": 41812,
-      "priority": "medium",
-      "alert": true,
-      "gbif_taxon_key": 5218911
-    },
-    {
       "scientific": "Mustela nivalis",
       "nl": "wezel",
       "en": "least weasel",
@@ -241,6 +197,17 @@
       "priority": "high",
       "alert": true,
       "gbif_taxon_key": 5218987
+    },
+    {
+      "scientific": "Mustela putorius",
+      "nl": "bunzing",
+      "en": "European polecat",
+      "emoji": "🐾",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": 41812,
+      "priority": "medium",
+      "alert": true,
+      "gbif_taxon_key": 5218911
     },
     {
       "scientific": "Lynx lynx",
