@@ -100,6 +100,17 @@
       "gbif_taxon_key": 2440905
     },
     {
+      "scientific": "Dama dama",
+      "nl": "damhert",
+      "en": "fallow deer",
+      "emoji": "🦌",
+      "family": "Cervidae",
+      "inaturalist_taxon_id": 42161,
+      "priority": "low",
+      "alert": false,
+      "gbif_taxon_key": 5220136
+    },
+    {
       "scientific": "Sus scrofa",
       "nl": "wild zwijn",
       "en": "wild boar",
@@ -133,6 +144,17 @@
       "gbif_taxon_key": 2437489
     },
     {
+      "scientific": "Sciurus carolinensis",
+      "nl": "grijze eekhoorn",
+      "en": "gray squirrel",
+      "emoji": "🐿️",
+      "family": "Sciuridae",
+      "inaturalist_taxon_id": 46017,
+      "priority": "low",
+      "alert": false,
+      "gbif_taxon_key": 5219681
+    },
+    {
       "scientific": "Eliomys quercinus",
       "nl": "eikelmuis",
       "en": "garden dormouse",
@@ -142,6 +164,83 @@
       "priority": "high",
       "alert": true,
       "gbif_taxon_key": 2439683
+    },
+    {
+      "scientific": "Glis glis",
+      "nl": "zevenslaper",
+      "en": "edible dormouse",
+      "emoji": "🐭",
+      "family": "Gliridae",
+      "inaturalist_taxon_id": 74383,
+      "priority": "high",
+      "alert": true,
+      "gbif_taxon_key": 5706486
+    },
+    {
+      "scientific": "Muscardinus avellanarius",
+      "nl": "hazelmuis",
+      "en": "hazel dormouse",
+      "emoji": "🐭",
+      "family": "Gliridae",
+      "inaturalist_taxon_id": 45856,
+      "priority": "high",
+      "alert": true,
+      "gbif_taxon_key": 2439658
+    },
+    {
+      "scientific": "Erinaceus europaeus",
+      "nl": "egel",
+      "en": "European hedgehog",
+      "emoji": "🦔",
+      "family": "Erinaceidae",
+      "inaturalist_taxon_id": 43042,
+      "priority": "medium",
+      "alert": false,
+      "gbif_taxon_key": 5219616
+    },
+    {
+      "scientific": "Oryctolagus cuniculus",
+      "nl": "konijn",
+      "en": "European rabbit",
+      "emoji": "🐇",
+      "family": "Leporidae",
+      "inaturalist_taxon_id": 43151,
+      "priority": "low",
+      "alert": false,
+      "gbif_taxon_key": 2436940
+    },
+    {
+      "scientific": "Lepus europaeus",
+      "nl": "haas",
+      "en": "brown hare",
+      "emoji": "🐇",
+      "family": "Leporidae",
+      "inaturalist_taxon_id": 43128,
+      "priority": "low",
+      "alert": false,
+      "gbif_taxon_key": 7952072
+    },
+    {
+      "scientific": "Mustela putorius",
+      "nl": "bunzing",
+      "en": "European polecat",
+      "emoji": "🐾",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": 41812,
+      "priority": "medium",
+      "alert": true,
+      "gbif_taxon_key": 5218911
+    },
+    {
+      "scientific": "Mustela nivalis",
+      "nl": "wezel",
+      "en": "least weasel",
+      "emoji": "🐾",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": 569428,
+      "priority": "high",
+      "alert": true,
+      "gbif_taxon_key": 5218987
     },
     {
       "scientific": "Lynx lynx",
