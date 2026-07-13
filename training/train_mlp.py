@@ -64,7 +64,6 @@ BACKGROUND_SPECIES: frozenset[str] = frozenset({
     "erinaceus_europaeus",      # egel
     "gulo_gulo",                # veelvraat — niet in NL
     "marmota_marmota",          # marmot — niet in NL
-    "mustela_putorius",         # bunzing
     "myocastor_coypus",         # nutria
     "castor_canadensis",        # Canadese bever — dichte verwant van bever, goede hard negative
     "nyctereutes_procyonoides", # wasbeerhond

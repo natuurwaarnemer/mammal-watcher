@@ -199,6 +199,17 @@
       "gbif_taxon_key": 5218987
     },
     {
+      "scientific": "Mustela putorius",
+      "nl": "bunzing",
+      "en": "European polecat",
+      "emoji": "🐾",
+      "family": "Mustelidae",
+      "inaturalist_taxon_id": 41812,
+      "priority": "medium",
+      "alert": true,
+      "gbif_taxon_key": 5218911
+    },
+    {
       "scientific": "Lynx lynx",
       "nl": "lynx",
       "en": "Eurasian lynx",
