@@ -121,6 +121,7 @@ BACKGROUND_SOURCES = {"WavCaps", "UrbanSound", "UrbanSound8K", "AudioCaps"}
 
 INDEX_FILE = Path("/mnt/usb/naturelm_metadata_index.jsonl")
 INDEX_CHECKPOINT_FILE = Path("/mnt/usb/naturelm_index_checkpoint.json")
+DOWNLOADED_FILENAMES_FILE = Path("/mnt/usb/naturelm_downloaded_filenames.json")
 
 
 def _slug(scientific: str) -> str:
@@ -203,6 +204,34 @@ def _existing_index_ids() -> set[str]:
                 except Exception:
                     continue
     return ids
+
+
+def _load_downloaded_filenames() -> dict[str, set[str]]:
+    """file_name's die in eerdere download-runs al zijn opgeslagen, per soort.
+
+    Zonder dit vergeet elke nieuwe run van download_audio_from_index welke
+    brondata-opnames al gedownload zijn — de dedupe in `_plan_downloads`
+    werkt dan alleen BINNEN één run, niet ERTUSSEN. Aangezien de index
+    gestaag groeit (checkpointed scan) en de audio-download los daarvan
+    meerdere keren gedraaid kan worden, zou dat dezelfde opname onder een
+    ander task-type/id opnieuw kunnen downloaden.
+    """
+    try:
+        if DOWNLOADED_FILENAMES_FILE.exists():
+            raw = json.loads(DOWNLOADED_FILENAMES_FILE.read_text())
+            return {slug: set(names) for slug, names in raw.items()}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_downloaded_filenames(mapping: dict[str, set[str]]) -> None:
+    try:
+        DOWNLOADED_FILENAMES_FILE.write_text(
+            json.dumps({slug: sorted(names) for slug, names in mapping.items()})
+        )
+    except Exception:
+        pass
 
 
 def _load_index() -> list[dict]:
@@ -362,6 +391,7 @@ def _plan_downloads(
     target_slugs: set[str],
     counters: dict[str, int],
     max_per_species: int,
+    already_downloaded: dict[str, set[str]] | None = None,
 ) -> dict[str, list[dict]]:
     """Groepeert index-entries per Parquet-bestand, met quota- en dedupe-logica.
 
@@ -370,8 +400,16 @@ def _plan_downloads(
       meerdere task-types in de index (bijv. dezelfde clip als
       taxonomic-classification én genus-detection én caption-common) — zonder
       dedupe zou dezelfde audio meermaals ingepland worden.
+    - `already_downloaded` (optioneel): file_name's die een VORIGE run van
+      download_audio_from_index al heeft opgeslagen. Zonder dit werkt de
+      dedupe hierboven alleen binnen één run — bij een tweede run (bijv. na
+      hervatten, of met een hoger quotum) zou dezelfde opname alsnog opnieuw
+      gedownload kunnen worden onder een ander id/task-type.
     """
-    seen_file_names: dict[str, set[str]] = {slug: set() for slug in target_slugs}
+    seen_file_names: dict[str, set[str]] = {
+        slug: set(already_downloaded.get(slug, ())) if already_downloaded else set()
+        for slug in target_slugs
+    }
     by_file: dict[str, list[dict]] = {}
     for e in entries:
         slug = e.get("species_slug")
@@ -416,7 +454,8 @@ def download_audio_from_index(
     if sum(counters.values()):
         print(f"📂 Voortgang gevonden: {sum(counters.values())} clips al aanwezig")
 
-    by_file = _plan_downloads(entries, target_slugs, counters, max_per_species)
+    already_downloaded = _load_downloaded_filenames()
+    by_file = _plan_downloads(entries, target_slugs, counters, max_per_species, already_downloaded)
 
     if not by_file:
         print("✓ Alle soorten al op quota (of geen matches in index) — niets te downloaden.")
@@ -460,12 +499,16 @@ def download_audio_from_index(
             if _save_audio_as_wav(audio, dest):
                 counters[slug] += 1
                 saved_total += 1
+                already_downloaded.setdefault(slug, set()).add(entry.get("file_name") or row_id)
+                if saved_total % 20 == 0:
+                    _save_downloaded_filenames(already_downloaded)
                 if debug:
                     print(f"  ✓ {species_nl[slug]:20s}: {dest.name} ({counters[slug]}/{max_per_species})")
             else:
                 errors += 1
 
     con.close()
+    _save_downloaded_filenames(already_downloaded)
 
     print(f"\n📊 Resultaat ({saved_total} nieuw opgeslagen, {errors} fouten):")
     for s in species_list:
