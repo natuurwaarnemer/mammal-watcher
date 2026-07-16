@@ -112,3 +112,39 @@ def test_plan_downloads_ignores_non_target_species() -> None:
     )
 
     assert plan == {}
+
+
+def test_plan_downloads_skips_filenames_already_downloaded_in_earlier_run() -> None:
+    """Cross-run dedupe: als een vorige run 'rec1.wav' al opsloeg (onder een
+    ander id/task-type), mag een latere run 'm niet nogmaals inplannen."""
+    module = _load_module()
+
+    entries = [
+        {"id": "a", "species_slug": "vulpes_vulpes", "file_name": "rec1.wav",
+         "parquet_url": "shard0.parquet", "task": "taxonomic-classification"},
+        {"id": "b", "species_slug": "vulpes_vulpes", "file_name": "rec2.wav",
+         "parquet_url": "shard1.parquet", "task": "caption-common"},
+    ]
+
+    plan = module._plan_downloads(
+        entries,
+        target_slugs={"vulpes_vulpes"},
+        counters={"vulpes_vulpes": 0},
+        max_per_species=50,
+        already_downloaded={"vulpes_vulpes": {"rec1.wav"}},
+    )
+
+    planned_ids = {e["id"] for entries_ in plan.values() for e in entries_}
+    assert planned_ids == {"b"}  # "a" (rec1.wav) is al gedownload in een eerdere run
+
+
+def test_downloaded_filenames_roundtrip(tmp_path, monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "DOWNLOADED_FILENAMES_FILE", tmp_path / "downloaded.json")
+
+    assert module._load_downloaded_filenames() == {}
+
+    module._save_downloaded_filenames({"vulpes_vulpes": {"rec1.wav", "rec2.wav"}})
+    loaded = module._load_downloaded_filenames()
+
+    assert loaded == {"vulpes_vulpes": {"rec1.wav", "rec2.wav"}}
